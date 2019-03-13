@@ -13,9 +13,9 @@ from mininet.log import setLogLevel
 
 class DCellController(Controller):
     """Run POX controller. Log to /tmp/c0.log"""
-    def __init__(self, name="c0", cdir=".", command="./pox/pox.py",
+    def __init__(self, name="c0", command="./pox/pox.py",
                  cargs="--verbose openflow.of_01 --port=%d dcell.dcell_pox", **kwargs):
-        Controller.__init__(self, name, cdir=cdir, command=command, cargs=cargs, **kwargs)
+        Controller.__init__(self, name, command=command, cargs=cargs, **kwargs)
 
 
 class DCellTopo(Topo):
