@@ -17,8 +17,8 @@ class TopoStat(object):
 
     def _handle_openflow_discovery_LinkEvent(self, event):
         link = event.link.uni
-        s1 = dpid_to_str(link.dpid1)
-        s2 = dpid_to_str(link.dpid2)
+        s1 = dpid_to_str(link.dpid1, alwaysLong=True)
+        s2 = dpid_to_str(link.dpid2, alwaysLong=True)
         key = (s1, s2)
         if event.added:  # link added
             log.info("(%s,%s) link up", s1, s2)
@@ -71,9 +71,9 @@ class Handler(object):
             # flood the packet out everything but the input port
             self._send_packet(packet_in, of.OFPP_ALL)
 
-    def _send_packet(self, data, port_out):
+    def _send_packet(self, packet_in, port_out):
         packet_out = of.ofp_packet_out()
-        packet_out.data = data
+        packet_out.data = packet_in
         packet_out.actions.append(of.ofp_action_output(port=port_out))
         self._connection.send(packet_out)
 

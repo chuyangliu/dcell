@@ -52,11 +52,8 @@ def main():
     net = Mininet(topo=DCellTopo(), link=TCLink, controller=DCellController, autoSetMacs=True)
     net.start()
     time.sleep(3)
-    print "Testing network connectivity"
     net.pingAll()
-    print "Testing bandwidth between h1 and h3"
-    h1, h3 = net["h1"], net["h3"]
-    net.iperf((h1, h3))
+    net.iperf((net["h1"], net["h3"]))
     # CLI(net)
     net.stop()
 
