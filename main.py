@@ -32,7 +32,15 @@ class DCellController(Controller):
 
 class DCellTopo(Topo):
 
-    def build(self, link_bw=100, switch_cls=OVSKernelSwitch):
+    def build(self, level, n, link_bw=100, switch_cls=OVSKernelSwitch):
+        """Build a DCell network topology.
+
+        Args:
+            level (int): DCell level to build
+            n (int): Number of hosts in a DCell-0
+            link_bw (int): Data link bandwidth (Mbps)
+            switch_cls (obj): Switch class
+        """
 
         # 1-layer tree
         # h1 = self.addHost("h1")
@@ -60,7 +68,12 @@ class DCellTopo(Topo):
 
 
 def main():
-    net = Mininet(topo=DCellTopo(), link=TCLink, controller=DCellController, autoSetMacs=True)
+    net = Mininet(
+        topo=DCellTopo(level=1, n=4),
+        link=TCLink,
+        controller=DCellController,
+        autoSetMacs=True
+    )
     net.start()
     time.sleep(3)
     net.pingAll()
