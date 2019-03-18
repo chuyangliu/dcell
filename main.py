@@ -21,7 +21,7 @@ class DCellController(Controller):
             "name": name,
             "command": "./pox/pox.py",
             "cargs": (
-                "--verbose "
+                # "--verbose "
                 "openflow.of_01 --port=%d "
                 "openflow.discovery --link_timeout=1 "  # 1 sec
                 "dcell_pox "
@@ -31,8 +31,19 @@ class DCellController(Controller):
 
 
 class DCellTopo(Topo):
+
     def build(self, link_bw=100, switch_cls=OVSKernelSwitch):
-        # tree topo
+
+        # 1-layer tree
+        # h1 = self.addHost("h1")
+        # h2 = self.addHost("h2")
+        # h3 = self.addHost("h3")
+        # s1 = self.addSwitch("s1", cls=switch_cls)
+        # self.addLink(s1, h1, bw=link_bw)
+        # self.addLink(s1, h2, bw=link_bw)
+        # self.addLink(s1, h3, bw=link_bw)
+
+        # 2-layer tree
         h1 = self.addHost("h1")
         h2 = self.addHost("h2")
         h3 = self.addHost("h3")

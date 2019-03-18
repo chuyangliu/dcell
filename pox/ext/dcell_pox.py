@@ -2,83 +2,74 @@
 # pylint: disable=missing-docstring,invalid-name
 
 from pox.core import core
-from pox.lib.util import dpid_to_str
 import pox.openflow.libopenflow_01 as of
 
 log = core.getLogger()
 
 
-class TopoStat(object):
-    _core_name = "topo_stat"  # usage: core.topo_stat.*
+class Controller(object):
 
     def __init__(self):
         core.listen_to_dependencies(self)
-        self.link_num = {}
 
     def _handle_openflow_discovery_LinkEvent(self, event):
-        link = event.link.uni
-        s1 = dpid_to_str(link.dpid1, alwaysLong=True)
-        s2 = dpid_to_str(link.dpid2, alwaysLong=True)
-        key = (s1, s2)
+        """Triggered when a link is added or removed."""
+        link = event.link
         if event.added:  # link added
-            log.info("(%s,%s) link up", s1, s2)
-            if key in self.link_num:
-                self.link_num[key] += 1
-            else:
-                self.link_num[key] = 1
+            log.info("LinkEvent | (%d,%d) up", link.dpid1, link.dpid2)
         elif event.removed:  # link removed
-            log.info("(%s,%s) link down", s1, s2)
-            self.link_num.pop(key, None)
+            log.info("LinkEvent | (%d,%d) down", link.dpid1, link.dpid2)
+
+    def _handle_openflow_ConnectionUp(self, event):
+        """Triggered when a switch is connected to the controller."""
+        log.info("ConnectionUp | dpid=%d", event.dpid)
+        Switch(event.connection)
 
 
-class Handler(object):
+class Switch(object):
 
     def __init__(self, connection):
-        self._connection = connection
-        self._connection.addListeners(self)
-        self._mac_port = {}
+        self._conn = connection
+        self._conn.addListeners(self)
+        self._dpid = self._conn.dpid
+        self._mac_port = {}  # mac_addr -> switch_port mapping
 
     def _handle_PacketIn(self, event):
-        packet, packet_in, port_in = event.parsed, event.ofp, event.port
-
-        if not packet.parsed:
-            log.warning("Ignoring incomplete packet")
+        """
+        Triggered when the switch's forwarding table does not have a match for the incoming
+        packet, causing the packet to be sent from the switch to the controller.
+        """
+        packet_eth = event.parsed
+        if not packet_eth.parsed:
+            log.warning("Ignore incomplete packet")
             return
 
-        mac_in, mac_out = str(packet.src), str(packet.dst)
-        self._mac_port[mac_in] = port_in
+        packet_of, port_src = event.ofp, event.port
+        mac_src, mac_dst = str(packet_eth.src), str(packet_eth.dst)
 
-        if mac_out in self._mac_port:
-            port_out = self._mac_port[mac_out]
+        # add mac->port mapping
+        self._mac_port[mac_src] = port_src
 
-            # match rules
-            match = of.ofp_match()
-            match.dl_src = packet.src
-            match.dl_dst = packet.dst
-            match.in_port = port_in
-
-            # push down flow entry
-            flow_mod = of.ofp_flow_mod()
-            flow_mod.match = match
-            flow_mod.actions.append(of.ofp_action_output(port=port_out))
-            self._connection.send(flow_mod)
-
-            # push down origin packet
-            self._send_packet(packet_in, port_out)
-
-            log.info("(%s,%d)=>(%s,%d) installed", mac_in, port_in, mac_out, port_out)
+        if mac_dst not in self._mac_port:
+            # destination port unknown, broadcast (ARP) request
+            msg = of.ofp_packet_out()
+            msg.data = packet_of
+            msg.actions.append(of.ofp_action_output(port=of.OFPP_ALL))
+            self._conn.send(msg)
+            log.info("PacketIn | dpid=%d | (%s,%d) => (%s,) broadcasted",
+                     self._dpid, mac_src, port_src, mac_dst)
         else:
-            # flood the packet out everything but the input port
-            self._send_packet(packet_in, of.OFPP_ALL)
-
-    def _send_packet(self, packet_in, port_out):
-        packet_out = of.ofp_packet_out()
-        packet_out.data = packet_in
-        packet_out.actions.append(of.ofp_action_output(port=port_out))
-        self._connection.send(packet_out)
+            # destination port known, add new flow entry
+            port_dst = self._mac_port[mac_dst]
+            msg = of.ofp_flow_mod()
+            msg.data = packet_of
+            msg.match = of.ofp_match(dl_src=packet_eth.src, dl_dst=packet_eth.dst)
+            msg.actions.append(of.ofp_action_output(port=port_dst))
+            self._conn.send(msg)
+            log.info("PacketIn | dpid=%d | (%s,%d) => (%s,%d) flow added",
+                     self._dpid, mac_src, port_src, mac_dst, port_dst)
 
 
 def launch():
-    if not core.hasComponent(TopoStat._core_name):
-        core.registerNew(TopoStat)
-    core.openflow.addListenerByName("ConnectionUp", lambda event: Handler(event.connection))
+    if not core.hasComponent(Controller.__name__):
+        core.registerNew(Controller)
