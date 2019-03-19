@@ -14,10 +14,8 @@
 
 """
 This component is for use with the OpenFlow tutorial.
-
 It acts as a simple hub, but can be modified to act like an L2
 learning switch.
-
 It's roughly similar to the one Brandon Heller did for NOX.
 """
 
@@ -79,49 +77,37 @@ class Tutorial (object):
     # sending it (len(packet_in.data) should be == packet_in.total_len)).
 
 
-  def act_like_switch (self, packet, packet_in, in_port):
+  def act_like_switch (self, packet, packet_in):
     """
     Implement switch-like behavior.
     """
 
+    """ # DELETE THIS LINE TO START WORKING ON THIS (AND THE ONE BELOW!) #
     # Here's some psuedocode to start you off implementing a learning
     # switch.  You'll need to rewrite it as real Python code.
-
     # Learn the port for the source MAC
-    src_mac = str(packet.src)
-    dst_mac = str(packet.dst)
-    self.mac_to_port[src_mac] = in_port
-
-    if dst_mac in self.mac_to_port:
-      dst_port = self.mac_to_port[dst_mac]
+    self.mac_to_port ... <add or update entry>
+    if the port associated with the destination MAC of the packet is known:
       # Send packet out the associated port
-      # self.resend_packet(packet_in, self.mac_to_port[dst_mac])
-
+      self.resend_packet(packet_in, ...)
       # Once you have the above working, try pushing a flow entry
       # instead of resending the packet (comment out the above and
       # uncomment and complete the below.)
-
-      log.info("Installing flow...")
-      log.info("(%s,%d) => (%s,%d)", src_mac, in_port, dst_mac, dst_port)
+      log.debug("Installing flow...")
       # Maybe the log statement should have source/destination/port?
-
-      msg = of.ofp_flow_mod()
-      
-      # Set fields to match received packet
-      msg.match = of.ofp_match.from_packet(packet)
-      # < Set other fields of flow_mod (timeouts? buffer_id?) >
-      
-      # < Add an output action, and send -- similar to resend_packet() >
-      msg.actions.append(of.ofp_action_output(port=dst_port))
-      self.connection.send(msg)
-
-      # resend packet
-      self.resend_packet(packet_in, dst_port)
-
+      #msg = of.ofp_flow_mod()
+      #
+      ## Set fields to match received packet
+      #msg.match = of.ofp_match.from_packet(packet)
+      #
+      #< Set other fields of flow_mod (timeouts? buffer_id?) >
+      #
+      #< Add an output action, and send -- similar to resend_packet() >
     else:
       # Flood the packet out everything but the input port
       # This part looks familiar, right?
       self.resend_packet(packet_in, of.OFPP_ALL)
+    """ # DELETE THIS LINE TO START WORKING ON THIS #
 
 
   def _handle_PacketIn (self, event):
@@ -138,8 +124,8 @@ class Tutorial (object):
 
     # Comment out the following line and uncomment the one after
     # when starting the exercise.
-    # self.act_like_hub(packet, packet_in)
-    self.act_like_switch(packet, packet_in, event.port)
+    self.act_like_hub(packet, packet_in)
+    #self.act_like_switch(packet, packet_in)
 
 
 
@@ -148,6 +134,6 @@ def launch ():
   Starts the component
   """
   def start_switch (event):
-    log.info("Controlling %s" % (event.connection,))
+    log.debug("Controlling %s" % (event.connection,))
     Tutorial(event.connection)
   core.openflow.addListenerByName("ConnectionUp", start_switch)
