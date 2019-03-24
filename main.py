@@ -39,45 +39,73 @@ class DCellTopo(Topo):
             link_bw (int): Data link bandwidth (Mbps)
             switch_cls (obj): Switch class
         """
-        self._hosts = {}
-        self._switches = {}
+        self._hosts = {}     # (k+1)-tuple -> host name
+        self._switches = {}  # (k+1)-tuple -> switch name
         self._nhost = 1
         self._nswitch = 1
+        self._nswitch0 = 0
 
-        def build_helper(self, pref, n, level, tl, gl, link_bw, switch_cls):
-            if level == 0: # build DCell0
-                switch_name = "s" + str(self._nswitch)
-                print(switch_name)
-                self._nswitch += 1
-                s = self.addSwitch(switch_name, cls=switch_cls)
-                dcell0_hosts = []
-                dcell0_switches = []
+        def build_helper(self, pref, n, level, link_bw, switch_cls):
+            if level == 0: # build DCell_0
+                self._nswitch0 += 1
+                switch_name0 = "s" + str(self._nswitch0)
+                s0 = self.addSwitch(switch_name0, cls=switch_cls)
                 for i in range(n):
-                    switch_id = pref + "s" + str(i)
-                    switch_name = "s" + str(self._nswitch)
-                    print(switch_name)
-                    self._nswitch += 1
-                    self._switches[switch_id] = switch_name
-                    dcell0_switches.append(self.addSwitch(switch_name, cls=switch_cls))
-
-                    host_id = pref + "h" + str(i)
+                    id = pref + str(i)
+                    # add a host
                     host_name = "h" + str(self._nhost)
-                    print(host_name)
                     self._nhost += 1
-                    self._hosts[host_id] = host_name
-                    dcell0_hosts.append(self.addHost(host_name))
+                    host = self.addHost(host_name)
+                    self._hosts[id] = host
 
-                    self.addLink(dcell0_switches[i], dcell0_hosts[i], bw=link_bw)
-                    self.addLink(s, dcell0_switches[i])
+                    # add a switch combined with the host
+                    switch_name = "s" + str(self._nswitch)
+                    self._nswitch += 1
+                    switch = self.addSwitch(switch_name, cls=switch_cls)
+                    self._switches[id] = switch
+
+                    self.addLink(switch, host, bw=link_bw)
+                    self.addLink(s0, switch)
+                    print(id + " | (" + host_name + "..." + switch_name + ") "
+                          + "(" + switch_name0 + "..." + switch_name + ")")
                 return
 
-        pref = ""
-        tl = n  # the number of servers in DCell_l
-        gl = 1  # the number of DCell_(l-1)s in DCell_l
-        for i in range(level + 1):
-            build_helper(self, pref, n, i, tl, gl, link_bw, switch_cls)
-            gl = tl + 1
-            tl = gl * tl
+            for i in range(g[level]):  # build DCell_(l-1)s
+                build_helper(self, pref + str(i), n, level - 1, link_bw, switch_cls)
+
+            for i in range(t[level - 1]):  # connect the DCell_(l-1)s
+                for j in range(i + 1, g[level]):
+                    n1 = pref + str(i) + str(j - 1)
+                    n2 = pref + str(j) + str(i)
+                    s1 = self._switches[n1]
+                    s2 = self._switches[n2]
+                    self.addLink(s1, s2)
+                    print("(" + n1 + "," + s1 + ")...(" + n2 + "," + s2 + ")")
+
+        t = []  # the number of servers in DCell_l
+        g = []  # the number of DCell_(l-1)s in DCell_l
+        t.append(n)
+        g.append(1)
+        for i in range(level):
+            g.append(t[i] + 1)
+            t.append(g[i + 1] * t[i])
+        self._nswitch0 = t[level]
+        pref = "DCell" + str(level) + "-" + str(n) + "."
+        build_helper(self, pref, n, level, link_bw, switch_cls)  # construct DCell
+
+        # # multi-path test
+        # s1 = self.addSwitch("s1", cls=switch_cls)
+        # s2 = self.addSwitch("s2", cls=switch_cls)
+        # s3 = self.addSwitch("s3", cls=switch_cls)
+        # s4 = self.addSwitch("s4", cls=switch_cls)
+        # h1 = self.addHost("h1")
+        # h2 = self.addHost("h2")
+        # self.addLink(s1, h1)
+        # self.addLink(s3, h2)
+        # self.addLink(s1, s2)
+        # self.addLink(s1, s4)
+        # self.addLink(s3, s2)
+        # self.addLink(s3, s4)
         
         # # 1-layer tree
         # print("in build")
@@ -107,7 +135,7 @@ class DCellTopo(Topo):
 
 def main():
     net = Mininet(
-        topo=DCellTopo(level=0, n=4),
+        topo=DCellTopo(level=1, n=4),
         link=TCLink,
         controller=DCellController,
         autoSetMacs=True
@@ -115,7 +143,7 @@ def main():
     net.start()
     time.sleep(3)
     net.pingAll()
-    net.iperf((net["h1"], net["h3"]))
+    # net.iperf((net["h1"], net["h3"]))
     # CLI(net)
     net.stop()
 
