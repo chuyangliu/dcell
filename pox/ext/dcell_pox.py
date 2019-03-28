@@ -9,7 +9,16 @@ log = core.getLogger()
 
 class Controller(object):
 
-    def __init__(self):
+    def __init__(self, dcell_level, dcell_n):
+        """Create a Controller instance.
+
+        Args:
+            dcell_level (int): DCell level to build and test
+            dcell_n (int): Number of hosts in a DCell_0
+        """
+        self._dcell_level = dcell_level
+        self._dcell_n = dcell_n
+        log.info("dell_level={} | dcell_n={}".format(dcell_level, dcell_n))
         core.listen_to_dependencies(self)
 
     def _handle_openflow_discovery_LinkEvent(self, event):
@@ -70,6 +79,6 @@ class Switch(object):
                      self._dpid, mac_src, port_src, mac_dst, port_dst)
 
 
-def launch():
+def launch(*args, **kw):
     if not core.hasComponent(Controller.__name__):
-        core.registerNew(Controller)
+        core.registerNew(Controller, *args, **kw)

@@ -12,6 +12,16 @@ from mininet.cli import CLI
 from mininet.log import setLogLevel
 
 
+# DCell level to build and test
+DCELL_LEVEL = 1
+# number of hosts in a DCell_0
+DCELL_N = 3
+# data link bandwidth (Mbps)
+LINK_BW = 100
+# switch class
+SWITCH_CLS = OVSKernelSwitch
+
+
 class DCellController(Controller):
     """
     Run a POX controller for DCell routing in a separate process.
@@ -25,7 +35,7 @@ class DCellController(Controller):
                 # "--verbose "
                 "openflow.of_01 --port=%d "
                 "openflow.discovery --link_timeout=1 "  # 1 sec
-                "dcell_pox "
+                "dcell_pox --dcell_level={} --dcell_n={}".format(DCELL_LEVEL, DCELL_N)
             )
         }
         Controller.__init__(self, **args)
@@ -34,24 +44,18 @@ class DCellController(Controller):
 class DCellTopo(Topo):
 
     def _add_host(self, name):
-        return self.addHost(name)
+        host_id = "%012x" % int(name[1:])
+        mac = ":".join(s.encode('hex') for s in host_id.decode('hex'))  # set mac equals to host id
+        return self.addHost(name, mac=mac)
 
     def _add_switch(self, name):
-        return self.addSwitch(name, cls=OVSKernelSwitch)
+        return self.addSwitch(name, cls=SWITCH_CLS)
 
     def _add_link(self, node1, node2):
-        return self.addLink(node1, node2, bw=self._link_bw)
+        return self.addLink(node1, node2, bw=LINK_BW)
 
-    def build(self, level, n, link_bw):
-        """Build a DCell network topology, called by Topo.__init__()
-
-        Args:
-            level (int): DCell level to build
-            n (int): Number of hosts in a DCell-0
-            link_bw (int): Data link bandwidth (Mbps)
-        """
-        self._link_bw = link_bw
-
+    def build(self):
+        """Build a DCell network topology, called by Topo.__init__()"""
         self._hosts = {}     # (k+1)-tuple -> host name
         self._switches = {}  # (k+1)-tuple -> switch name
         self._nhost = 1
@@ -97,14 +101,14 @@ class DCellTopo(Topo):
 
         t = []  # the number of servers in DCell_l
         g = []  # the number of DCell_(l-1)s in DCell_l
-        t.append(n)
+        t.append(DCELL_N)
         g.append(1)
-        for i in range(level):
+        for i in range(DCELL_LEVEL):
             g.append(t[i] + 1)
             t.append(g[i + 1] * t[i])
-        self._nswitch0 = t[level]
-        pref = "DCell" + str(level) + "-" + str(n) + "."
-        build_helper(self, pref, n, level)  # construct DCell
+        self._nswitch0 = t[DCELL_LEVEL]
+        pref = "DCell" + str(DCELL_LEVEL) + "-" + str(DCELL_N) + "."
+        build_helper(self, pref, DCELL_N, DCELL_LEVEL)  # construct DCell
 
         # 1-layer tree
         # h1 = self._add_host("h1")
@@ -137,10 +141,9 @@ def main():
 
     # start a net
     net = Mininet(
-        topo=DCellTopo(level=1, n=3, link_bw=100),
+        topo=DCellTopo(),
         link=TCLink,
-        controller=DCellController,
-        autoSetMacs=True
+        controller=DCellController
     )
     net.start()
     time.sleep(3)  # wait controller starts
