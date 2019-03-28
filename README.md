@@ -17,7 +17,7 @@ pox      # POX library
 
 ## Dependencies
 
-- [Mininet (2.2.2)](https://github.com/mininet/mininet/tree/2.2.2)
+- [Mininet (2.3.0d5)](https://github.com/mininet/mininet/tree/2.3.0d5)
 - [POX (dart)](https://github.com/noxrepo/pox/tree/dart)
 
 [dcell-url]: https://www.microsoft.com/en-us/research/publication/dcell-a-scalable-and-fault-tolerant-network-structure-for-data-centers/

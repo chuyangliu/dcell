@@ -1,4 +1,4 @@
 #!/bin/sh
 
 mn -c
-./main.py
+./main.py $1
