@@ -27,7 +27,7 @@ class DCellController(Controller):
                 # "--verbose "
                 "openflow.of_01 --port=%d "
                 "openflow.discovery --link_timeout=1 "  # 1 sec
-                "dcell_pox --dcell_level={} --dcell_n={}".format(DCELL_LEVEL, DCELL_N)
+                "controller --dcell_level={} --dcell_n={}".format(DCELL_LEVEL, DCELL_N)
             )
         }
         Controller.__init__(self, **args)

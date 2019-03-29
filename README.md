@@ -10,10 +10,10 @@
 run.sh  # main entrance: run DCell benchmarking
 pox     # POX library
 |- ext
-|  |- main.py       # build DCell structure, start a POX controller for DCell routing
-|  |- topo.py       # DCell topology class
-|  |- dcell_pox.py  # POX controller for DCell routing
-|  |- comm.py       # DCell configurations and helper functions
+|  |- main.py        # build DCell structure, start a POX controller for DCell routing
+|  |- topo.py        # DCell topology class
+|  |- controller.py  # POX controller for DCell routing
+|  |- comm.py        # DCell configurations and helper functions
 |- ...
 |- other POX library files
 ```
