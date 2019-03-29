@@ -1,8 +1,13 @@
 #!/usr/bin/env python
 # pylint: disable=missing-docstring,invalid-name
 
+from multiprocessing import Lock
+
 from pox.core import core
+from pox.lib.addresses import EthAddr
 import pox.openflow.libopenflow_01 as of
+
+from comm import *
 
 log = core.getLogger()
 
@@ -16,9 +21,19 @@ class Controller(object):
             dcell_level (int): DCell level to build and test
             dcell_n (int): Number of hosts in a DCell_0
         """
-        self._dcell_level = dcell_level
-        self._dcell_n = dcell_n
-        log.info("dell_level={} | dcell_n={}".format(dcell_level, dcell_n))
+        self._dcell_level = int(dcell_level)
+        self._dcell_n = int(dcell_n)
+        self._mutex = Lock()
+
+        # compute number of hosts and switches
+        self._num_hosts, self._num_switches = dcell_count(self._dcell_level, self._dcell_n)
+        self._num_connected_switches = 0
+
+        # log DCell info
+        log.info("dcell_level={} | dcell_n={} | num_hosts={} | num_switches={}" \
+                 .format(self._dcell_level, self._dcell_n, self._num_hosts, self._num_switches))
+
+        # add event handlers
         core.listen_to_dependencies(self)
 
     def _handle_openflow_discovery_LinkEvent(self, event):
@@ -32,7 +47,29 @@ class Controller(object):
     def _handle_openflow_ConnectionUp(self, event):
         """Triggered when a switch is connected to the controller."""
         log.info("ConnectionUp | dpid=%d", event.dpid)
+        # add event handlers to the switch
         Switch(event.connection)
+        with self._mutex:
+            self._num_connected_switches += 1
+            # initial routing table when all switches are connected to the controller
+            if self._num_connected_switches == self._num_switches:
+                log.info("ConnectionUp | dpid=%d | building routing tables...", event.dpid)
+                self._build_all_routes()
+
+    def _build_all_routes(self):
+        """Build routing table for each pair of the hosts."""
+        for i in range(self._num_hosts):
+            for j in range(i + 1, self._num_hosts):
+                self._build_route(i, j)
+
+    def _build_route(self, mac_src, mac_dst):
+        """Build routing path between two hosts.
+
+        Args:
+            mac_src (int): MAC address of source host
+            mac_dst (int): MAC address of destination host
+        """
+        # TODO
 
 
 class Switch(object):

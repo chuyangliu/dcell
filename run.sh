@@ -1,4 +1,4 @@
 #!/bin/sh
 
 mn -c
-./main.py $1
+cd ./pox/ext/ && ./main.py $1
