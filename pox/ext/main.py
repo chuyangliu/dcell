@@ -10,7 +10,7 @@ from mininet.link import TCLink
 from mininet.cli import CLI
 from mininet.log import setLogLevel
 
-from comm import *
+import comm
 from topo import DCellTopo
 
 
@@ -26,8 +26,9 @@ class DCellController(Controller):
             "cargs": (
                 # "--verbose "
                 "openflow.of_01 --port=%d "
-                "openflow.discovery --link_timeout=1 "  # 1 sec
-                "controller --dcell_level={} --dcell_n={}".format(DCELL_LEVEL, DCELL_N)
+                "openflow.discovery --link_timeout={} "
+                "controller"
+                .format(comm.LINK_TIMEOUT)
             )
         }
         Controller.__init__(self, **args)

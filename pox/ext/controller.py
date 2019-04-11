@@ -7,31 +7,24 @@ from pox.core import core
 from pox.lib.addresses import EthAddr
 import pox.openflow.libopenflow_01 as of
 
-from comm import *
+import comm
 
 log = core.getLogger()
 
 
 class Controller(object):
 
-    def __init__(self, dcell_level, dcell_n):
-        """Create a Controller instance.
-
-        Args:
-            dcell_level (int): DCell level to build and test
-            dcell_n (int): Number of hosts in a DCell_0
-        """
-        self._dcell_level = int(dcell_level)
-        self._dcell_n = int(dcell_n)
+    def __init__(self):
+        """Create a Controller instance."""
         self._mutex = Lock()
 
         # compute number of hosts and switches
-        self._num_hosts, self._num_switches = dcell_count(self._dcell_level, self._dcell_n)
+        self._num_hosts, self._num_switches = comm.dcell_count()
         self._num_connected_switches = 0
 
         # log DCell info
-        log.info("dcell_level={} | dcell_n={} | num_hosts={} | num_switches={}" \
-                 .format(self._dcell_level, self._dcell_n, self._num_hosts, self._num_switches))
+        log.info("init | dcell_k={} | dcell_n={} | num_hosts={} | num_switches={}" \
+                 .format(comm.DCELL_LEVEL, comm.DCELL_N, self._num_hosts, self._num_switches))
 
         # add event handlers
         core.listen_to_dependencies(self)
@@ -60,7 +53,7 @@ class Controller(object):
         """Build routing table for each pair of the hosts."""
         for i in range(self._num_hosts):
             for j in range(i + 1, self._num_hosts):
-                self._build_route(i, j)
+                self._build_route(i + 1, j + 1)
 
     def _build_route(self, mac_src, mac_dst):
         """Build routing path between two hosts.
@@ -69,6 +62,10 @@ class Controller(object):
             mac_src (int): MAC address of source host
             mac_dst (int): MAC address of destination host
         """
+        tpl_src = comm.dcell_tuple_id(mac_src)
+        tpl_dst = comm.dcell_tuple_id(mac_dst)
+        log.info("build_route | mac_src=%d | mac_dst=%d | tpl_src=%s | tpl_dst=%s",
+                 comm.dcell_host_id(tpl_src), comm.dcell_host_id(tpl_dst), tpl_src, tpl_dst)
         # TODO
 
 
