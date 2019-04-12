@@ -72,9 +72,8 @@ class DCellTopo(Topo):
 
             for i in range(t[level - 1]):  # connect the DCell_(l-1)s
                 for j in range(i + 1, g[level]):
-                    pref = comm.dcell_tuple_id(level, n, i + 1)
-                    n1 = str(pref + [i, j - 1])
-                    n2 = str(pref + [j, i])
+                    n1 = str(pref + [i] + comm.dcell_tuple_id(level - 1, n, j))
+                    n2 = str(pref + [j] + comm.dcell_tuple_id(level - 1, n, i + 1))
                     s1 = self._switches[n1]
                     s2 = self._switches[n2]
                     self._add_link(s1, s2)
