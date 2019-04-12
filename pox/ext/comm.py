@@ -15,6 +15,8 @@ LINK_BW = 100
 LINK_TIMEOUT = 1
 # switch class
 SWITCH_CLS = OVSKernelSwitch
+# delay for updating flow entries in a mini (DCell_0) switch (seconds)
+SWITCH_MINI_DELAY = 0.05
 # base value for IP addresses
 IP_BASE = 10 << 24
 # netmask
@@ -25,6 +27,11 @@ def mac_to_str(mac):
     """Convert a mac address integer to a string "XX:XX:XX:XX:XX:XX"."""
     mac_str = "%012x" % mac
     return ":".join(s.encode('hex') for s in mac_str.decode('hex'))
+
+
+def mac_to_int(mac):
+    """Convert a mac address string to its corresponding integer."""
+    return int(mac.translate(None, ":"), 16)
 
 
 def ip_to_str(ip):
