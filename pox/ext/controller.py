@@ -24,7 +24,7 @@ class Controller(object):
 
         # log DCell info
         log.info("init | dcell_k={} | dcell_n={} | num_hosts={} | num_switches={}" \
-                 .format(comm.DCELL_LEVEL, comm.DCELL_N, self._num_hosts, self._num_switches))
+                 .format(comm.DCELL_K, comm.DCELL_N, self._num_hosts, self._num_switches))
 
         # add event handlers
         core.listen_to_dependencies(self)

@@ -4,7 +4,7 @@
 from mininet.node import OVSKernelSwitch
 
 # DCell level to build and test
-DCELL_LEVEL = 1
+DCELL_K = 1
 # number of hosts in a DCell_0
 DCELL_N = 3
 # data link bandwidth (Mbps)
@@ -30,8 +30,8 @@ def dcell_count():
     """
     num_hosts, num_switches = DCELL_N, 1
 
-    if DCELL_LEVEL > 0:
-        for _ in range(DCELL_LEVEL):
+    if DCELL_K > 0:
+        for _ in range(DCELL_K):
             num_switches *= num_hosts + 1
             num_hosts *= num_hosts + 1
 
@@ -50,11 +50,11 @@ def dcell_tuple_id(host_id):
     Returns:
         tuple_id (tuple): k+1 tuple representation of the host id
     """
-    tuple_id = [0,] * (DCELL_LEVEL + 1)
+    tuple_id = [0,] * (DCELL_K + 1)
     n = DCELL_N
 
-    for i in range(DCELL_LEVEL, -1, -1):
-        if i == DCELL_LEVEL:
+    for i in range(DCELL_K, -1, -1):
+        if i == DCELL_K:
             tuple_id[i] = (host_id - 1) % n
         else:
             tuple_id[i] = (host_id - 1) / n
@@ -75,8 +75,8 @@ def dcell_host_id(tuple_id):
     host_id = 0
     n = DCELL_N
 
-    for i in range(DCELL_LEVEL, -1, -1):
-        if i == DCELL_LEVEL:
+    for i in range(DCELL_K, -1, -1):
+        if i == DCELL_K:
             host_id += tuple_id[i]
         else:
             host_id += tuple_id[i] * n

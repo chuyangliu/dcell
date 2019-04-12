@@ -3,7 +3,7 @@
 
 from mininet.topo import Topo
 
-from comm import *
+import comm
 
 
 class DCellTopo(Topo):
@@ -40,7 +40,7 @@ class DCellTopo(Topo):
         self._switches = {}  # (k+1)-tuple -> switch name
         self._nhost = 1
         self._nswitch = 1
-        self._nswitch0, nswitch = dcell_count(DCELL_LEVEL, DCELL_N)
+        self._nswitch0, nswitch = comm.dcell_count()
 
         def build_helper(self, pref, n, level):
             if level == 0: # build DCell_0
@@ -81,21 +81,21 @@ class DCellTopo(Topo):
 
         t = []  # the number of servers in DCell_l
         g = []  # the number of DCell_(l-1)s in DCell_l
-        t.append(DCELL_N)
+        t.append(comm.DCELL_N)
         g.append(1)
-        for i in range(DCELL_LEVEL):
+        for i in range(comm.DCELL_K):
             g.append(t[i] + 1)
             t.append(g[i + 1] * t[i])
-        self._nswitch0 = t[DCELL_LEVEL]
-        pref = "DCell" + str(DCELL_LEVEL)
-        build_helper(self, pref, DCELL_N, DCELL_LEVEL)  # construct DCell
+        self._nswitch0 = t[comm.DCELL_K]
+        pref = "DCell" + str(comm.DCELL_K)
+        build_helper(self, pref, comm.DCELL_N, comm.DCELL_K)  # construct DCell
 
     def _add_host(self, name):
         host_id = int(name[1:])
-        return self.addHost(name, mac=mac_to_str(host_id))  # set mac equals to host id
+        return self.addHost(name, mac=comm.mac_to_str(host_id))  # set mac equals to host id
 
     def _add_switch(self, name):
-        return self.addSwitch(name, cls=SWITCH_CLS)
+        return self.addSwitch(name, cls=comm.SWITCH_CLS)
 
     def _add_link(self, node1, node2):
-        return self.addLink(node1, node2, bw=LINK_BW)
+        return self.addLink(node1, node2, bw=comm.LINK_BW)
