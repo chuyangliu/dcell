@@ -5,6 +5,7 @@ from multiprocessing import Lock
 
 from pox.core import core
 from pox.lib.addresses import EthAddr
+import pox.lib.packet as pkt
 import pox.openflow.libopenflow_01 as of
 
 import comm
@@ -19,7 +20,7 @@ class Controller(object):
         self._mutex = Lock()
 
         # compute number of hosts and switches
-        self._num_hosts, self._num_switches = comm.dcell_count(comm.DCELL_K, comm.DCELL_N)
+        self._num_hosts, self._num_switches = comm.dcell_count()
         self._num_connected_switches = 0
 
         # log DCell info
@@ -62,25 +63,34 @@ class Controller(object):
             mac_src (int): MAC address of source host
             mac_dst (int): MAC address of destination host
         """
-        def _build_dcell_route(tpl_src, tpl_dst):
-            pref = self._common_prefix(tpl_src, tpl_dst)
 
-            if len(pref) == comm.DCELL_K:  # same DCell_0
+        def _build_dcell_route(tpl_src, tpl_dst):
+            """DCellRouting(src, dst) from the paper."""
+
+            pref = self._common_prefix(tpl_src, tpl_dst)
+            pref_len = len(pref)
+
+            if pref == comm.DCELL_K:  # same DCell_0
                 switch0_dpid = self._dcell0_switch_dpid(mac_src)
-                # add flow entry from src to dst
-                self._push_flow(mac_src, mac_src, mac_dst, 1)
-                self._push_flow(switch0_dpid, mac_src, mac_dst, tpl_dst % comm.DCELL_N + 1)
-                # add flow entry from dst to src
-                self._push_flow(mac_dst, mac_dst, mac_src, 1)
-                self._push_flow(switch0_dpid, mac_dst, mac_src, tpl_src % comm.DCELL_N + 1)
+                self._push_flow(mac_src, mac_src, mac_dst, 2)  # port 2 connected to DCell_0 switch
+                self._push_flow(mac_dst, mac_dst, mac_src, 2)  # port 2 connected to DCell_0 switch
+                self._push_flow(switch0_dpid, mac_src, mac_dst, tpl_dst % comm.DCELL_N + 2)
+                self._push_flow(switch0_dpid, mac_dst, mac_src, tpl_src % comm.DCELL_N + 2)
                 return
 
-            # TODO
+            # link between two sub DCells
+            mid_src, mid_dst = self._middle_link(pref, tpl_src[pref_len], tpl_dst[pref_len])
+            self._push_flow(comm.host_id(mid_src), mac_src, mac_dst, comm.DCELL_K - pref_len + 2)
+            self._push_flow(comm.host_id(mid_dst), mac_dst, mac_src, comm.DCELL_K - pref_len + 2)
 
-        tpl_src = self._tuple_id(mac_src)
-        tpl_dst = self._tuple_id(mac_dst)
+            # build routes recursively
+            _build_dcell_route(tpl_src, mid_src)
+            _build_dcell_route(mid_dst, tpl_dst)
+
+        tpl_src = comm.tuple_id(mac_src)
+        tpl_dst = comm.tuple_id(mac_dst)
         log.info("build_route | mac_src=%d | mac_dst=%d | tpl_src=%s | tpl_dst=%s",
-                 self._host_id(tpl_src), self._host_id(tpl_dst), tpl_src, tpl_dst)
+                 comm.host_id(tpl_src), comm.host_id(tpl_dst), tpl_src, tpl_dst)
 
         _build_dcell_route(tpl_src, tpl_dst)
 
@@ -102,12 +112,33 @@ class Controller(object):
         conn = core.openflow.connections[dpid]
         conn.send(msg)
 
+    def _middle_link(self, pref, src_idx, dst_idx):
+        """Get the middle links that connects two sub DCells."""
+        pref_len = len(pref)
+
+        swap = False
+        if src_idx > dst_idx:
+            src_idx, dst_idx = dst_idx, src_idx
+            swap = True
+
+        src_mid_suffix = comm.tuple_id(dst_idx, comm.DCELL_K - pref_len - 1)
+        dst_mid_suffix = comm.tuple_id(src_idx + 1, comm.DCELL_K - pref_len - 1)
+        src_mid = pref + [src_idx] + src_mid_suffix
+        dst_mid = pref + [dst_idx] + dst_mid_suffix
+
+        if swap:
+            src_mid, dst_mid = dst_mid, src_mid
+
+        return src_mid, dst_mid
+
     def _common_prefix(self, list1, list2):
         """Return the common prefix entries (as a new list) of two given lists."""
         ans = []
         for i in range(min(len(list1), len(list2))):
             if list1[i] == list2[i]:
                 ans.append(list1[i])
+            else:
+                break
         return ans
 
     def _ethaddr(self, mac):
@@ -117,12 +148,6 @@ class Controller(object):
     def _dcell0_switch_dpid(self, host_id):
         """Return the dpid of the mini switch in the DCell_0 where a given host is located."""
         return self._num_hosts + 1 + (host_id - 1) / comm.DCELL_N
-
-    def _tuple_id(self, host_id):
-        return comm.dcell_tuple_id(comm.DCELL_K, comm.DCELL_N, host_id)
-
-    def _host_id(self, tuple_id):
-        return comm.dcell_host_id(comm.DCELL_K, comm.DCELL_N, tuple_id)
 
 
 class Switch(object):
@@ -143,30 +168,36 @@ class Switch(object):
             log.warning("Ignore incomplete packet")
             return
 
-        packet_of, port_src = event.ofp, event.port
-        mac_src, mac_dst = str(packet_eth.src), str(packet_eth.dst)
+        # reply ARP request
+        if packet_eth.type == packet_eth.ARP_TYPE and packet_eth.payload.opcode == pkt.arp.REQUEST:
 
-        # add mac->port mapping
-        self._mac_port[mac_src] = port_src
+            # parse ARP request, get destination mac address
+            arp_req = packet_eth.payload
+            ip_src, ip_dst = arp_req.protosrc, arp_req.protodst
+            mac_src, mac_dst = packet_eth.src, EthAddr(comm.ip_to_mac(ip_dst.toStr()))
 
-        if mac_dst not in self._mac_port:
-            # destination port unknown, broadcast (ARP) request
+            # create an ARP response packet
+            arp_resp = pkt.arp()
+            arp_resp.opcode = pkt.arp.REPLY
+            arp_resp.protosrc = ip_dst
+            arp_resp.protodst = ip_src
+            arp_resp.hwsrc = mac_dst
+            arp_resp.hwdst = mac_src
+
+            # pack inside a ethernet frame
+            reply = pkt.ethernet(src=mac_dst, dst=mac_src)
+            reply.type = pkt.ethernet.ARP_TYPE
+            reply.set_payload(arp_resp)
+
+            # send response
             msg = of.ofp_packet_out()
-            msg.data = packet_of
-            msg.actions.append(of.ofp_action_output(port=of.OFPP_ALL))
+            msg.data = reply.pack()
+            msg.actions.append(of.ofp_action_output(port=of.OFPP_IN_PORT))
+            msg.in_port = event.port
             self._conn.send(msg)
-            log.info("PacketIn | dpid=%d | (%s,%d) => (%s,) broadcasted",
-                     self._dpid, mac_src, port_src, mac_dst)
-        else:
-            # destination port known, add new flow entry
-            port_dst = self._mac_port[mac_dst]
-            msg = of.ofp_flow_mod()
-            msg.data = packet_of
-            msg.match = of.ofp_match(dl_src=packet_eth.src, dl_dst=packet_eth.dst)
-            msg.actions.append(of.ofp_action_output(port=port_dst))
-            self._conn.send(msg)
-            log.info("PacketIn | dpid=%d | (%s,%d) => (%s,%d) flow added",
-                     self._dpid, mac_src, port_src, mac_dst, port_dst)
+
+            log.info("PacketIn | dpid=%d | (%s,%s) => (%s,%s)",
+                     self._dpid, ip_src.toStr(), mac_src.toStr(), ip_dst.toStr(), mac_dst.toStr())
 
 
 def launch(*args, **kw):

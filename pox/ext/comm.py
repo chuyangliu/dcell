@@ -4,7 +4,7 @@
 from mininet.node import OVSKernelSwitch
 
 # DCell level to build and test
-DCELL_K = 1
+DCELL_K = 0
 # number of hosts in a DCell_0
 DCELL_N = 3
 # data link bandwidth (Mbps)
@@ -13,6 +13,10 @@ LINK_BW = 100
 LINK_TIMEOUT = 1
 # switch class
 SWITCH_CLS = OVSKernelSwitch
+# base value for IP addresses
+IP_BASE = 10
+# netmask
+IP_MASK = 8
 
 
 def mac_to_str(mac):
@@ -21,7 +25,22 @@ def mac_to_str(mac):
     return ":".join(s.encode('hex') for s in mac_str.decode('hex'))
 
 
-def dcell_count(k, n):
+def ip_to_str(ip):
+    """Convert a subnet IP address integer to its dot-decimal string."""
+    ip += IP_BASE << 24
+    return "{}.{}.{}.{}/{}".format(
+        (ip >> 24) & 0xFF, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF, IP_MASK)
+
+
+def ip_to_mac(ip):
+    """Convert a dot-decimal IP string to its mac address string."""
+    ip_int = 0
+    for i, val in range(ip.split(".")):
+        ip_int += int(val) << (24 - 8 * i)
+    return mac_to_str(ip_int - IP_BASE)
+
+
+def dcell_count(k=DCELL_K, n=DCELL_N):
     """Calculate total number of hosts and switches in current DCell.
 
     Args:
@@ -45,13 +64,13 @@ def dcell_count(k, n):
     return num_hosts, num_switches
 
 
-def dcell_tuple_id(k, n, host_id):
+def tuple_id(host_id, k=DCELL_K, n=DCELL_N):
     """Convert host id to its equivalent k+1 tuple representation.
 
     Args:
+        host_id (int): Host id within range [1, num_hosts]
         k (int): Level of DCell to calculate
         n (int): Number of hosts in a DCell_0
-        host_id (int): Host id within range [1, num_hosts]
 
     Returns:
         tuple_id (list): k+1 tuple representation of the host id
@@ -66,13 +85,13 @@ def dcell_tuple_id(k, n, host_id):
     return tuple_id
 
 
-def dcell_host_id(k, n, tuple_id):
+def host_id(tuple_id, k=DCELL_K, n=DCELL_N):
     """Convert k+1 tuple id to its equivalent host id.
 
     Args:
+        tuple_id (list): k+1 tuple representation of the host id
         k (int): Level of DCell to calculate
         n (int): Number of hosts in a DCell_0
-        tuple_id (list): k+1 tuple representation of the host id
 
     Returns:
         host_id (int): Host id (within range [1, num_hosts]) corresponding to the k+1 tuple id

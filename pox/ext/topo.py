@@ -40,7 +40,7 @@ class DCellTopo(Topo):
         self._switches = {}  # (k+1)-tuple -> switch name
         self._nhost = 1
         self._nswitch = 1
-        self._nswitch0, nswitch = comm.dcell_count(comm.DCELL_K, comm.DCELL_N)
+        self._nswitch0, nswitch = comm.dcell_count()
 
         def build_helper(self, pref, n, level):
             if level == 0: # build DCell_0
@@ -72,8 +72,8 @@ class DCellTopo(Topo):
 
             for i in range(t[level - 1]):  # connect the DCell_(l-1)s
                 for j in range(i + 1, g[level]):
-                    n1 = str(pref + [i] + comm.dcell_tuple_id(level - 1, n, j))
-                    n2 = str(pref + [j] + comm.dcell_tuple_id(level - 1, n, i + 1))
+                    n1 = str(pref + [i] + comm.tuple_id(j, level - 1, n))
+                    n2 = str(pref + [j] + comm.tuple_id(i + 1, level - 1, n))
                     s1 = self._switches[n1]
                     s2 = self._switches[n2]
                     self._add_link(s1, s2)
@@ -92,7 +92,8 @@ class DCellTopo(Topo):
 
     def _add_host(self, name):
         host_id = int(name[1:])
-        return self.addHost(name, mac=comm.mac_to_str(host_id))  # set mac equals to host id
+        ip, mac = comm.ip_to_str(host_id), comm.mac_to_str(host_id)  # ip/mac equals to host id
+        return self.addHost(name, ip=ip, mac=mac)
 
     def _add_switch(self, name):
         return self.addSwitch(name, cls=comm.SWITCH_CLS)
