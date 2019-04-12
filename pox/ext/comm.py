@@ -77,13 +77,21 @@ def tuple_id(host_id, k=DCELL_K, n=DCELL_N):
     Returns:
         tuple_id (list): k+1 tuple representation of the host id
     """
+    num_dcells = [1,] * (k + 1)
+    num_hosts = [n,] * (k + 1)
+    for i in range(k - 1, -1, -1):
+        num_dcells[i] = num_hosts[i + 1] + 1
+        num_hosts[i] = num_dcells[i] * num_hosts[i + 1]
+
     tuple_id = [0,] * (k + 1)
-    for i in range(k, -1, -1):
+    host_id -= 1
+    for i in range(k + 1):
         if i == k:
-            tuple_id[i] = (host_id - 1) % n
+            tuple_id[i] = host_id % num_hosts[i]
         else:
-            tuple_id[i] = (host_id - 1) / n
-            n *= n + 1
+            tuple_id[i] = host_id / num_hosts[i + 1]
+            host_id %= num_hosts[i + 1]
+
     return tuple_id
 
 

@@ -94,7 +94,7 @@ class Controller(object):
         # build routes among switches
         tpl_src, tpl_dst = comm.tuple_id(mac_src), comm.tuple_id(mac_dst)
         log.debug("build_route | mac_src={} | mac_dst={} | tpl_src={} | tpl_dst={}"
-                  .format(mac_src, mac_dst, tpl_src, tpl_dst))
+                  .format(comm.host_id(tpl_src), comm.host_id(tpl_dst), tpl_src, tpl_dst))
         _build_dcell_route(tpl_src, tpl_dst)
 
         # build routes from switches to hosts
