@@ -67,15 +67,18 @@ class Controller(object):
         def _build_dcell_route(tpl_src, tpl_dst):
             """DCellRouting(src, dst) from the paper."""
 
+            log.info("build_route | mac_src=%d | mac_dst=%d | tpl_src=%s | tpl_dst=%s",
+                     mac_src, mac_dst, tpl_src, tpl_dst)
+
             pref = self._common_prefix(tpl_src, tpl_dst)
             pref_len = len(pref)
 
-            if pref == comm.DCELL_K:  # same DCell_0
+            if pref_len == comm.DCELL_K:  # same DCell_0
                 switch0_dpid = self._dcell0_switch_dpid(mac_src)
                 self._push_flow(mac_src, mac_src, mac_dst, 2)  # port 2 connected to DCell_0 switch
                 self._push_flow(mac_dst, mac_dst, mac_src, 2)  # port 2 connected to DCell_0 switch
-                self._push_flow(switch0_dpid, mac_src, mac_dst, tpl_dst % comm.DCELL_N + 2)
-                self._push_flow(switch0_dpid, mac_dst, mac_src, tpl_src % comm.DCELL_N + 2)
+                self._push_flow(switch0_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
+                self._push_flow(switch0_dpid, mac_dst, mac_src, tpl_src[-1] % comm.DCELL_N + 1)
                 return
 
             # link between two sub DCells
@@ -87,12 +90,13 @@ class Controller(object):
             _build_dcell_route(tpl_src, mid_src)
             _build_dcell_route(mid_dst, tpl_dst)
 
-        tpl_src = comm.tuple_id(mac_src)
-        tpl_dst = comm.tuple_id(mac_dst)
-        log.info("build_route | mac_src=%d | mac_dst=%d | tpl_src=%s | tpl_dst=%s",
-                 comm.host_id(tpl_src), comm.host_id(tpl_dst), tpl_src, tpl_dst)
 
-        _build_dcell_route(tpl_src, tpl_dst)
+        # build routes among switches
+        _build_dcell_route(comm.tuple_id(mac_src), comm.tuple_id(mac_dst))
+
+        # build routes from switches to hosts
+        self._push_flow(mac_src, mac_dst, mac_src, 1)  # port 1 connected to host
+        self._push_flow(mac_dst, mac_src, mac_dst, 1)  # port 1 connected to host
 
     def _push_flow(self, dpid, mac_src, mac_dst, port_dst):
         """Push new flow entry to a switch.
@@ -196,8 +200,13 @@ class Switch(object):
             msg.in_port = event.port
             self._conn.send(msg)
 
-            log.info("PacketIn | dpid=%d | (%s,%s) => (%s,%s)",
-                     self._dpid, ip_src.toStr(), mac_src.toStr(), ip_dst.toStr(), mac_dst.toStr())
+            log.info("PacketIn | dpid=%d | %s | (%s,%s) => (%s,%s)",
+                     self._dpid, pkt.ethernet.getNameForType(packet_eth.type),
+                     ip_src.toStr(), mac_src.toStr(), ip_dst.toStr(), mac_dst.toStr())
+        else:
+            log.info("PacketIn | dpid=%d | %s | (%s) => (%s)",
+                     self._dpid, pkt.ethernet.getNameForType(packet_eth.type),
+                     packet_eth.src.toStr(), packet_eth.dst.toStr())
 
 
 def launch(*args, **kw):

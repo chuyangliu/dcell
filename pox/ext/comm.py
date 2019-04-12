@@ -14,7 +14,7 @@ LINK_TIMEOUT = 1
 # switch class
 SWITCH_CLS = OVSKernelSwitch
 # base value for IP addresses
-IP_BASE = 10
+IP_BASE = 10 << 24
 # netmask
 IP_MASK = 8
 
@@ -27,7 +27,7 @@ def mac_to_str(mac):
 
 def ip_to_str(ip):
     """Convert a subnet IP address integer to its dot-decimal string."""
-    ip += IP_BASE << 24
+    ip += IP_BASE
     return "{}.{}.{}.{}/{}".format(
         (ip >> 24) & 0xFF, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF, IP_MASK)
 
@@ -35,7 +35,7 @@ def ip_to_str(ip):
 def ip_to_mac(ip):
     """Convert a dot-decimal IP string to its mac address string."""
     ip_int = 0
-    for i, val in range(ip.split(".")):
+    for i, val in enumerate(ip.split(".")):
         ip_int += int(val) << (24 - 8 * i)
     return mac_to_str(ip_int - IP_BASE)
 
