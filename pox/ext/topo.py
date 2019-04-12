@@ -48,7 +48,7 @@ class DCellTopo(Topo):
                 switch_name0 = "s" + str(self._nswitch0)
                 s0 = self._add_switch(switch_name0)
                 for i in range(n):
-                    id = pref + "." + str(i)
+                    id = str(pref + [i])
                     # add a host
                     host_name = "h" + str(self._nhost)
                     self._nhost += 1
@@ -68,12 +68,13 @@ class DCellTopo(Topo):
                 return
 
             for i in range(g[level]):  # build DCell_(l-1)s
-                build_helper(self, pref + "." + str(i), n, level - 1)
+                build_helper(self, pref + [i], n, level - 1)
 
             for i in range(t[level - 1]):  # connect the DCell_(l-1)s
                 for j in range(i + 1, g[level]):
-                    n1 = pref + "." + str(i) + "." + str(j - 1)
-                    n2 = pref + "." + str(j) + "." + str(i)
+                    pref = comm.dcell_tuple_id(level, n, i + 1)
+                    n1 = str(pref + [i, j - 1])
+                    n2 = str(pref + [j, i])
                     s1 = self._switches[n1]
                     s2 = self._switches[n2]
                     self._add_link(s1, s2)
@@ -87,7 +88,7 @@ class DCellTopo(Topo):
             g.append(t[i] + 1)
             t.append(g[i + 1] * t[i])
         self._nswitch0 = t[comm.DCELL_K]
-        pref = "DCell" + str(comm.DCELL_K)
+        pref = []
         build_helper(self, pref, comm.DCELL_N, comm.DCELL_K)  # construct DCell
 
     def _add_host(self, name):
