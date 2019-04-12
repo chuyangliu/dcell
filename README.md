@@ -4,6 +4,12 @@
 
 [DCell][dcell-url] data center network structure.
 
+## Run
+
+```
+sudo ./run.sh [cli]
+```
+
 ## Structure
 
 ```
