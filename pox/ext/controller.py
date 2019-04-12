@@ -34,20 +34,18 @@ class Controller(object):
         """Triggered when a link is added or removed."""
         link = event.link
         if event.added:  # link added
-            log.info("LinkEvent | (%d,%d) up", link.dpid1, link.dpid2)
+            log.info("LinkEvent | ({},{}) up".format(link.dpid1, link.dpid2))
         elif event.removed:  # link removed
-            log.info("LinkEvent | (%d,%d) down", link.dpid1, link.dpid2)
+            log.info("LinkEvent | ({},{}) down".format(link.dpid1, link.dpid2))
 
     def _handle_openflow_ConnectionUp(self, event):
         """Triggered when a switch is connected to the controller."""
-        log.info("ConnectionUp | dpid=%d", event.dpid)
-        # add event handlers to the switch
-        Switch(event.connection)
+        log.info("ConnectionUp | dpid={}".format(event.dpid))
+        Switch(event.connection)  # add event handlers to the switch
         with self._mutex:
             self._num_connected_switches += 1
             # initial routing table when all switches are connected to the controller
             if self._num_connected_switches == self._num_switches:
-                log.info("ConnectionUp | dpid=%d | building routing tables...", event.dpid)
                 self._build_all_routes()
 
     def _build_all_routes(self):
@@ -67,16 +65,19 @@ class Controller(object):
         def _build_dcell_route(tpl_src, tpl_dst):
             """DCellRouting(src, dst) from the paper."""
 
-            log.info("build_route | mac_src=%d | mac_dst=%d | tpl_src=%s | tpl_dst=%s",
-                     mac_src, mac_dst, tpl_src, tpl_dst)
+            log.debug("build_dcell_route | mac_src={} | mac_dst={} | tpl_src={} | tpl_dst={}"
+                      .format(mac_src, mac_dst, tpl_src, tpl_dst))
+
+            if tpl_src == tpl_dst:
+                return  # skip routing to self
 
             pref = self._common_prefix(tpl_src, tpl_dst)
             pref_len = len(pref)
 
             if pref_len == comm.DCELL_K:  # same DCell_0
-                switch0_dpid = self._dcell0_switch_dpid(mac_src)
-                self._push_flow(mac_src, mac_src, mac_dst, 2)  # port 2 connected to DCell_0 switch
-                self._push_flow(mac_dst, mac_dst, mac_src, 2)  # port 2 connected to DCell_0 switch
+                switch0_dpid = self._dcell0_switch_dpid(comm.host_id(tpl_src))
+                self._push_flow(comm.host_id(tpl_src), mac_src, mac_dst, 2)
+                self._push_flow(comm.host_id(tpl_dst), mac_dst, mac_src, 2)
                 self._push_flow(switch0_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
                 self._push_flow(switch0_dpid, mac_dst, mac_src, tpl_src[-1] % comm.DCELL_N + 1)
                 return
@@ -90,9 +91,11 @@ class Controller(object):
             _build_dcell_route(tpl_src, mid_src)
             _build_dcell_route(mid_dst, tpl_dst)
 
-
         # build routes among switches
-        _build_dcell_route(comm.tuple_id(mac_src), comm.tuple_id(mac_dst))
+        tpl_src, tpl_dst = comm.tuple_id(mac_src), comm.tuple_id(mac_dst)
+        log.debug("build_route | mac_src={} | mac_dst={} | tpl_src={} | tpl_dst={}"
+                  .format(mac_src, mac_dst, tpl_src, tpl_dst))
+        _build_dcell_route(tpl_src, tpl_dst)
 
         # build routes from switches to hosts
         self._push_flow(mac_src, mac_dst, mac_src, 1)  # port 1 connected to host
@@ -111,7 +114,6 @@ class Controller(object):
         msg = of.ofp_flow_mod()
         msg.match = of.ofp_match(dl_src=self._ethaddr(mac_src), dl_dst=self._ethaddr(mac_dst))
         msg.actions.append(of.ofp_action_output(port=port_dst))
-
         # send flow message to switch
         conn = core.openflow.connections[dpid]
         conn.send(msg)
@@ -145,13 +147,13 @@ class Controller(object):
                 break
         return ans
 
-    def _ethaddr(self, mac):
-        """Convert a mac address integer to a EthAddr object."""
-        return EthAddr(comm.mac_to_str(mac))
-
     def _dcell0_switch_dpid(self, host_id):
         """Return the dpid of the mini switch in the DCell_0 where a given host is located."""
         return self._num_hosts + 1 + (host_id - 1) / comm.DCELL_N
+
+    def _ethaddr(self, mac):
+        """Convert a mac address integer to a EthAddr object."""
+        return EthAddr(comm.mac_to_str(mac))
 
 
 class Switch(object):
@@ -160,7 +162,6 @@ class Switch(object):
         self._conn = connection
         self._conn.addListeners(self)
         self._dpid = self._conn.dpid
-        self._mac_port = {}  # mac_addr -> switch_port mapping
 
     def _handle_PacketIn(self, event):
         """
@@ -169,8 +170,7 @@ class Switch(object):
         """
         packet_eth = event.parsed
         if not packet_eth.parsed:
-            log.warning("Ignore incomplete packet")
-            return
+            return  # ignore incomplete packet
 
         # reply ARP request
         if packet_eth.type == packet_eth.ARP_TYPE and packet_eth.payload.opcode == pkt.arp.REQUEST:
@@ -200,13 +200,13 @@ class Switch(object):
             msg.in_port = event.port
             self._conn.send(msg)
 
-            log.info("PacketIn | dpid=%d | %s | (%s,%s) => (%s,%s)",
-                     self._dpid, pkt.ethernet.getNameForType(packet_eth.type),
-                     ip_src.toStr(), mac_src.toStr(), ip_dst.toStr(), mac_dst.toStr())
+            log.debug("PacketIn | dpid={} | type={} | ({},{}) => ({},{})".format(
+                self._dpid, pkt.ethernet.getNameForType(packet_eth.type),
+                ip_src.toStr(), mac_src.toStr(), ip_dst.toStr(), mac_dst.toStr()))
         else:
-            log.info("PacketIn | dpid=%d | %s | (%s) => (%s)",
-                     self._dpid, pkt.ethernet.getNameForType(packet_eth.type),
-                     packet_eth.src.toStr(), packet_eth.dst.toStr())
+            log.debug("PacketIn | dpid={} | type={} | ({}) => ({})".format(
+                self._dpid, pkt.ethernet.getNameForType(packet_eth.type),
+                packet_eth.src.toStr(), packet_eth.dst.toStr()))
 
 
 def launch(*args, **kw):

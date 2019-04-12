@@ -3,8 +3,10 @@
 
 from mininet.node import OVSKernelSwitch
 
+# whether run POX in debug mode
+DEBUG_POX = False
 # DCell level to build and test
-DCELL_K = 0
+DCELL_K = 1
 # number of hosts in a DCell_0
 DCELL_N = 3
 # data link bandwidth (Mbps)

@@ -24,11 +24,11 @@ class DCellController(Controller):
             "name": name,
             "command": "../pox.py",
             "cargs": (
-                # "--verbose "
+                "{} "
                 "openflow.of_01 --port=%d "
                 "openflow.discovery --link_timeout={} "
                 "controller"
-                .format(comm.LINK_TIMEOUT)
+                .format("--verbose log.level --DEBUG" if comm.DEBUG_POX else "", comm.LINK_TIMEOUT)
             )
         }
         Controller.__init__(self, **args)

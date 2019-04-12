@@ -36,6 +36,8 @@ class DCellTopo(Topo):
         self._add_link(s3, s2)
 
     def _build_dcell(self):
+        print "build_dcell | dcell_k={} | dcell_n={}".format(comm.DCELL_K, comm.DCELL_N)
+
         self._hosts = {}     # (k+1)-tuple -> host name
         self._switches = {}  # (k+1)-tuple -> switch name
         self._nhost = 1
