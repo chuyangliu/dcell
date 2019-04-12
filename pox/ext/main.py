@@ -45,7 +45,10 @@ def main():
         controller=DCellController
     )
     net.start()
-    time.sleep(3)  # wait controller starts
+
+    # wait controller starts
+    print "Waiting controller setup..."
+    time.sleep(3)
 
     # run tests
     if cli:
