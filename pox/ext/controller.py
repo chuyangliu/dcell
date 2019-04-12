@@ -62,11 +62,61 @@ class Controller(object):
             mac_src (int): MAC address of source host
             mac_dst (int): MAC address of destination host
         """
+        def _build_dcell_route(tpl_src, tpl_dst):
+            pref = self._common_prefix(tpl_src, tpl_dst)
+
+            if len(pref) == comm.DCELL_K:  # same DCell_0
+                switch0_dpid = self._dcell0_switch_dpid(mac_src)
+                # add flow entry from src to dst
+                self._push_flow(mac_src, mac_src, mac_dst, 1)
+                self._push_flow(switch0_dpid, mac_src, mac_dst, tpl_dst % comm.DCELL_N + 1)
+                # add flow entry from dst to src
+                self._push_flow(mac_dst, mac_dst, mac_src, 1)
+                self._push_flow(switch0_dpid, mac_dst, mac_src, tpl_src % comm.DCELL_N + 1)
+                return
+
+            # TODO
+
         tpl_src = self._tuple_id(mac_src)
         tpl_dst = self._tuple_id(mac_dst)
         log.info("build_route | mac_src=%d | mac_dst=%d | tpl_src=%s | tpl_dst=%s",
                  self._host_id(tpl_src), self._host_id(tpl_dst), tpl_src, tpl_dst)
-        # TODO
+
+        _build_dcell_route(tpl_src, tpl_dst)
+
+    def _push_flow(self, dpid, mac_src, mac_dst, port_dst):
+        """Push new flow entry to a switch.
+
+        Args:
+            dpid (int): data path id of the switch to push the flow entry
+            mac_src (int): MAC address of source host
+            mac_dst (int): MAC address of destination host
+            port_dst (int): output port of the flow entry
+        """
+        # create flow message
+        msg = of.ofp_flow_mod()
+        msg.match = of.ofp_match(dl_src=self._ethaddr(mac_src), dl_dst=self._ethaddr(mac_dst))
+        msg.actions.append(of.ofp_action_output(port=port_dst))
+
+        # send flow message to switch
+        conn = core.openflow.connections[dpid]
+        conn.send(msg)
+
+    def _common_prefix(self, list1, list2):
+        """Return the common prefix entries (as a new list) of two given lists."""
+        ans = []
+        for i in range(min(len(list1), len(list2))):
+            if list1[i] == list2[i]:
+                ans.append(list1[i])
+        return ans
+
+    def _ethaddr(self, mac):
+        """Convert a mac address integer to a EthAddr object."""
+        return EthAddr(comm.mac_to_str(mac))
+
+    def _dcell0_switch_dpid(self, host_id):
+        """Return the dpid of the mini switch in the DCell_0 where a given host is located."""
+        return self._num_hosts + 1 + (host_id - 1) / comm.DCELL_N
 
     def _tuple_id(self, host_id):
         return comm.dcell_tuple_id(comm.DCELL_K, comm.DCELL_N, host_id)
