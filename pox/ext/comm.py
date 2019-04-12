@@ -21,17 +21,21 @@ def mac_to_str(mac):
     return ":".join(s.encode('hex') for s in mac_str.decode('hex'))
 
 
-def dcell_count():
+def dcell_count(k, n):
     """Calculate total number of hosts and switches in current DCell.
+
+    Args:
+        k (int): Level of DCell to calculate
+        n (int): Number of hosts in a DCell_0
 
     Returns:
         num_hosts (int): number of hosts in the DCell
         num_switches (int): number of switches in the DCell
     """
-    num_hosts, num_switches = DCELL_N, 1
+    num_hosts, num_switches = n, 1
 
-    if DCELL_K > 0:
-        for _ in range(DCELL_K):
+    if k > 0:
+        for _ in range(k):
             num_switches *= num_hosts + 1
             num_hosts *= num_hosts + 1
 
@@ -41,45 +45,43 @@ def dcell_count():
     return num_hosts, num_switches
 
 
-def dcell_tuple_id(host_id):
+def dcell_tuple_id(k, n, host_id):
     """Convert host id to its equivalent k+1 tuple representation.
 
     Args:
+        k (int): Level of DCell to calculate
+        n (int): Number of hosts in a DCell_0
         host_id (int): Host id within range [1, num_hosts]
 
     Returns:
-        tuple_id (tuple): k+1 tuple representation of the host id
+        tuple_id (list): k+1 tuple representation of the host id
     """
-    tuple_id = [0,] * (DCELL_K + 1)
-    n = DCELL_N
-
-    for i in range(DCELL_K, -1, -1):
-        if i == DCELL_K:
+    tuple_id = [0,] * (k + 1)
+    for i in range(k, -1, -1):
+        if i == k:
             tuple_id[i] = (host_id - 1) % n
         else:
             tuple_id[i] = (host_id - 1) / n
             n *= n + 1
+    return tuple_id
 
-    return tuple(tuple_id)
 
-
-def dcell_host_id(tuple_id):
+def dcell_host_id(k, n, tuple_id):
     """Convert k+1 tuple id to its equivalent host id.
 
     Args:
-        tuple_id (tuple): k+1 tuple representation of the host id
+        k (int): Level of DCell to calculate
+        n (int): Number of hosts in a DCell_0
+        tuple_id (list): k+1 tuple representation of the host id
 
     Returns:
         host_id (int): Host id (within range [1, num_hosts]) corresponding to the k+1 tuple id
     """
     host_id = 0
-    n = DCELL_N
-
-    for i in range(DCELL_K, -1, -1):
-        if i == DCELL_K:
+    for i in range(k, -1, -1):
+        if i == k:
             host_id += tuple_id[i]
         else:
             host_id += tuple_id[i] * n
             n *= n + 1
-
     return host_id + 1

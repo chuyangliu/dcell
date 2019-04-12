@@ -19,7 +19,7 @@ class Controller(object):
         self._mutex = Lock()
 
         # compute number of hosts and switches
-        self._num_hosts, self._num_switches = comm.dcell_count()
+        self._num_hosts, self._num_switches = comm.dcell_count(comm.DCELL_K, comm.DCELL_N)
         self._num_connected_switches = 0
 
         # log DCell info
@@ -62,11 +62,17 @@ class Controller(object):
             mac_src (int): MAC address of source host
             mac_dst (int): MAC address of destination host
         """
-        tpl_src = comm.dcell_tuple_id(mac_src)
-        tpl_dst = comm.dcell_tuple_id(mac_dst)
+        tpl_src = self._tuple_id(mac_src)
+        tpl_dst = self._tuple_id(mac_dst)
         log.info("build_route | mac_src=%d | mac_dst=%d | tpl_src=%s | tpl_dst=%s",
-                 comm.dcell_host_id(tpl_src), comm.dcell_host_id(tpl_dst), tpl_src, tpl_dst)
+                 self._host_id(tpl_src), self._host_id(tpl_dst), tpl_src, tpl_dst)
         # TODO
+
+    def _tuple_id(self, host_id):
+        return comm.dcell_tuple_id(comm.DCELL_K, comm.DCELL_N, host_id)
+
+    def _host_id(self, tuple_id):
+        return comm.dcell_host_id(comm.DCELL_K, comm.DCELL_N, tuple_id)
 
 
 class Switch(object):
