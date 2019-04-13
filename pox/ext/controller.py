@@ -41,19 +41,21 @@ class Controller(object):
 
         # get link with normalized dpid order
         link = event.link.uni
-        link_tpl = (link.dpid1, link.dpid2)
+        link_tuple = (link.dpid1, link.dpid2)
 
         with self._mutex_link_update:
 
-            if event.added:  # link added
-                if link_tpl in self._bad_links:
-                    self._bad_links.discard(link_tpl)
-                    log.info("LinkEvent | ({},{}) up".format(link_tpl[0], link_tpl[1]))
+            if event.added and link_tuple in self._bad_links:  # link recovered
+                log.info("LinkEvent | ({},{}) up".format(link.dpid1, link.dpid2))
+                self._bad_links.discard(link_tuple)
 
-            elif event.removed:  # link removed
-                if link_tpl not in self._bad_links:
-                    self._bad_links.add(link_tpl)
-                    log.info("LinkEvent | ({},{}) down".format(link_tpl[0], link_tpl[1]))
+            elif event.removed and link_tuple not in self._bad_links:  # link broken
+                log.info("LinkEvent | ({},{}) down".format(link.dpid1, link.dpid2))
+                self._bad_links.add(link_tuple)
+
+                # remove flows output to broken link
+                self._del_flow(link.dpid1, out_port=link.port1)
+                self._del_flow(link.dpid2, out_port=link.port2)
 
     def _handle_openflow_ConnectionUp(self, event):
         """Triggered when a switch is connected to the controller."""
@@ -74,18 +76,13 @@ class Controller(object):
             for j in range(i + 1, self._num_hosts):
                 self._build_route(i + 1, j + 1)
 
-    def _build_route(self, mac_src, mac_dst, update=False):
+    def _build_route(self, mac_src, mac_dst):
         """Build routing path between two hosts.
 
         Args:
             mac_src (int): MAC address of source host
             mac_dst (int): MAC address of destination host
-            update (bool): Whether to update existed flow entries
         """
-        def _push_flow(dpid, mac_src, mac_dst, port_dst):
-            """Wrapper for self._push_flow."""
-            return self._push_flow(dpid, mac_src, mac_dst, port_dst, update)
-
         def _build_dcell_route(tpl_src, tpl_dst):
             """DCellRouting(src, dst) from the paper."""
 
@@ -102,13 +99,13 @@ class Controller(object):
 
                 # add flow entries to mini switch
                 mini_dpid = self._mini_dpid(comm.host_id(tpl_src))
-                _push_flow(mini_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
-                _push_flow(mini_dpid, mac_dst, mac_src, tpl_src[-1] % comm.DCELL_N + 1)
+                self._push_flow(mini_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
+                self._push_flow(mini_dpid, mac_dst, mac_src, tpl_src[-1] % comm.DCELL_N + 1)
 
                 # add flow entries to host switches
                 out_port = 2  # port 2 connected to mini switch
-                _push_flow(comm.host_id(tpl_src), mac_src, mac_dst, out_port)
-                _push_flow(comm.host_id(tpl_dst), mac_dst, mac_src, out_port)
+                self._push_flow(comm.host_id(tpl_src), mac_src, mac_dst, out_port)
+                self._push_flow(comm.host_id(tpl_dst), mac_dst, mac_src, out_port)
 
                 return
 
@@ -128,8 +125,8 @@ class Controller(object):
 
             # update routing tables on the middle link switches
             out_port = comm.DCELL_K - pref_len + 2
-            _push_flow(comm.host_id(mid_src), mac_src, mac_dst, out_port)
-            _push_flow(comm.host_id(mid_dst), mac_dst, mac_src, out_port)
+            self._push_flow(comm.host_id(mid_src), mac_src, mac_dst, out_port)
+            self._push_flow(comm.host_id(mid_dst), mac_dst, mac_src, out_port)
 
             # build routes recursively
             _build_dcell_route(tpl_src, mid_src)
@@ -140,23 +137,29 @@ class Controller(object):
 
         # build routes from switches to hosts
         out_port = 1  # port 1 connected to host
-        _push_flow(mac_src, mac_dst, mac_src, out_port)
-        _push_flow(mac_dst, mac_src, mac_dst, out_port)
+        self._push_flow(mac_src, mac_dst, mac_src, out_port)
+        self._push_flow(mac_dst, mac_src, mac_dst, out_port)
 
-    def _push_flow(self, dpid, mac_src, mac_dst, port_dst, update):
-        """Push new flow entry to a switch.
-
-        Args:
-            dpid (int): data path id of the switch to push the flow entry
-            mac_src (int): MAC address of source host
-            mac_dst (int): MAC address of destination host
-            port_dst (int): Output port of the flow entry
-            update (bool): Whether to update existed flow entries
-        """
-        # create flow message
-        msg = of.ofp_flow_mod(command=of.OFPFC_MODIFY if update else of.OFPFC_ADD)
+    def _push_flow(self, dpid, mac_src, mac_dst, out_port):
+        """Push new flow entry to a switch. Replace existing flow entry."""
+        # delete existing flows
+        self._del_flow(dpid, mac_src, mac_dst)
+        # create flow add message
+        msg = of.ofp_flow_mod(command=of.OFPFC_ADD)
         msg.match = of.ofp_match(dl_src=self._ethaddr(mac_src), dl_dst=self._ethaddr(mac_dst))
-        msg.actions.append(of.ofp_action_output(port=port_dst))
+        msg.actions.append(of.ofp_action_output(port=out_port))
+        # send flow message to switch
+        core.openflow.connections[dpid].send(msg)
+
+    def _del_flow(self, dpid, mac_src=None, mac_dst=None, out_port=of.OFPP_NONE):
+        """Remove flow entries from a switch."""
+        if mac_src is not None:
+            mac_src = self._ethaddr(mac_src)
+        if mac_dst is not None:
+            mac_dst = self._ethaddr(mac_dst)
+        # create flow remove message
+        msg = of.ofp_flow_mod(command=of.OFPFC_DELETE, out_port=out_port)
+        msg.match = of.ofp_match(dl_src=mac_src, dl_dst=mac_dst)
         # send flow message to switch
         core.openflow.connections[dpid].send(msg)
 
