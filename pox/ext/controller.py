@@ -13,6 +13,59 @@ import comm
 log = core.getLogger()
 
 
+class FlowTable(object):
+    """In-memory dictionary recording flow entries in each switch.
+
+    Each flow entry consists of a Match object and an Action object. A Match object matches
+    source and destination MAC addresses of an incoming Ethernet frame. An Action object specifies
+    the output port on the switch to forward the frame.
+    """
+
+    def __init__(self):
+        # map: dpid => [out_port => [set of (mac_src,mac_dst) tuples]]
+        # flow entry in each switch can be represented as (mac_src, mac_dst, out_port)
+        self._table = {}
+
+    def add_flow(self, dpid, mac_src, mac_dst, out_port):
+        """Add one flow entry if not exist."""
+        if dpid not in self._table:
+            self._table[dpid] = {}
+        if out_port not in self._table[dpid]:
+            self._table[dpid][out_port] = set()
+        self._table[dpid][out_port].add((mac_src, mac_dst))
+
+    def del_flow(self, dpid, mac_src=None, mac_dst=None, out_port=None):
+        """Remove matched flow entries if exist."""
+        if dpid not in self._table:
+            return
+
+        match_addr = mac_src is not None and mac_dst is not None
+        match_port = out_port is not None
+
+        if match_port:
+            if match_addr:
+                self._table[dpid][out_port].discard((mac_src, mac_dst))  # delete one flow
+            else:
+                self._table[dpid].pop(out_port, None)  # delete all flows with out_port
+        else:
+            if match_addr:
+                for _, tuples in self._table[dpid].iteritems():
+                    tuples.discard((mac_src, mac_dst))  # delete all flows with (mac_src, mac_dst)
+            else:
+                self._table[dpid] = {}  # delete all flows
+
+    def flow_addrs(self, dpid, out_port=None):
+        """Get matched flow entries."""
+        addrs = set()
+        if dpid in self._table:
+            if out_port is None:
+                for _, tuples in self._table[dpid].iteritems():
+                    addrs.union(tuples)
+            elif out_port in self._table[dpid]:
+                addrs = self._table[dpid][out_port]
+        return addrs
+
+
 class Controller(object):
 
     def __init__(self):
@@ -23,11 +76,16 @@ class Controller(object):
 
         # counter for connected switches
         self._num_connect = 0
-        self._mutex_num_connect = Lock()
 
         # broken links
         self._bad_links = set()
-        self._mutex_link_update = Lock()
+
+        # keep track of flow entries in each switch
+        self._flow_table = FlowTable()
+
+        # mutex locks
+        self._mutex_connect = Lock()
+        self._mutex_link_state = Lock()
 
         # add event handlers
         core.listen_to_dependencies(self)
@@ -43,19 +101,31 @@ class Controller(object):
         link = event.link.uni
         link_tuple = (link.dpid1, link.dpid2)
 
-        with self._mutex_link_update:
+        with self._mutex_link_state:
+            rebuild_routes = set([])
 
             if event.added and link_tuple in self._bad_links:  # link recovered
                 log.info("LinkEvent | ({},{}) up".format(link.dpid1, link.dpid2))
                 self._bad_links.discard(link_tuple)
 
+                # rebuild all routes that pass the two switches
+                # edge case: middle link broken and recovered, when mac_src == mid_src
+                rebuild_routes.union(self._flow_table.flow_addrs(link.dpid1))
+                rebuild_routes.union(self._flow_table.flow_addrs(link.dpid2))
+
             elif event.removed and link_tuple not in self._bad_links:  # link broken
                 log.info("LinkEvent | ({},{}) down".format(link.dpid1, link.dpid2))
                 self._bad_links.add(link_tuple)
 
-                # remove flows output to broken link
-                self._del_flow(link.dpid1, out_port=link.port1)
-                self._del_flow(link.dpid2, out_port=link.port2)
+                # rebuild all routes that pass the broken link
+                rebuild_routes.union(self._flow_table.flow_addrs(link.dpid1, link.port1))
+                rebuild_routes.union(self._flow_table.flow_addrs(link.dpid2, link.port2))
+
+            # rebuild routes
+            for mac_src, mac_dst in rebuild_routes:
+                self._build_route(mac_src, mac_dst)
+                log.debug("LinkEvent | rebuild routes | ({}) => ({})"
+                          .format(comm.tuple_id(mac_src), comm.tuple_id(mac_dst)))
 
     def _handle_openflow_ConnectionUp(self, event):
         """Triggered when a switch is connected to the controller."""
@@ -65,7 +135,7 @@ class Controller(object):
         log.info("ConnectionUp | dpid={}".format(event.dpid))
 
         # check connected switches
-        with self._mutex_num_connect:
+        with self._mutex_connect:
             self._num_connect += 1
             if self._num_connect == self._num_switches:
                 self._build_all_routes()  # build routing tables after all switches connected
@@ -74,10 +144,12 @@ class Controller(object):
         """Build routing table for each pair of the hosts."""
         for i in range(self._num_hosts):
             for j in range(i + 1, self._num_hosts):
+                # build bidirectional routes
                 self._build_route(i + 1, j + 1)
+                self._build_route(j + 1, i + 1)
 
     def _build_route(self, mac_src, mac_dst):
-        """Build routing path between two hosts.
+        """Build routing path from source host to destination host.
 
         Args:
             mac_src (int): MAC address of source host
@@ -96,17 +168,11 @@ class Controller(object):
             pref_len = len(pref)
 
             if pref_len == comm.DCELL_K:  # same DCell_0
-
                 # add flow entries to mini switch
                 mini_dpid = self._mini_dpid(comm.host_id(tpl_src))
-                self._push_flow(mini_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
-                self._push_flow(mini_dpid, mac_dst, mac_src, tpl_src[-1] % comm.DCELL_N + 1)
-
-                # add flow entries to host switches
-                out_port = 2  # port 2 connected to mini switch
-                self._push_flow(comm.host_id(tpl_src), mac_src, mac_dst, out_port)
-                self._push_flow(comm.host_id(tpl_dst), mac_dst, mac_src, out_port)
-
+                self._add_flow(mini_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
+                # add flow entries to host switches (port 2 connected to mini switch)
+                self._add_flow(comm.host_id(tpl_src), mac_src, mac_dst, 2)
                 return
 
             # get the link connecting two sub DCells
@@ -125,8 +191,7 @@ class Controller(object):
 
             # update routing tables on the middle link switches
             out_port = comm.DCELL_K - pref_len + 2
-            self._push_flow(comm.host_id(mid_src), mac_src, mac_dst, out_port)
-            self._push_flow(comm.host_id(mid_dst), mac_dst, mac_src, out_port)
+            self._add_flow(comm.host_id(mid_src), mac_src, mac_dst, out_port)
 
             # build routes recursively
             _build_dcell_route(tpl_src, mid_src)
@@ -135,33 +200,43 @@ class Controller(object):
         # build routes among switches
         _build_dcell_route(comm.tuple_id(mac_src), comm.tuple_id(mac_dst))
 
-        # build routes from switches to hosts
-        out_port = 1  # port 1 connected to host
-        self._push_flow(mac_src, mac_dst, mac_src, out_port)
-        self._push_flow(mac_dst, mac_src, mac_dst, out_port)
+        # build routes from destination switch to host (port 1 connected to host)
+        self._add_flow(mac_dst, mac_src, mac_dst, 1)
 
-    def _push_flow(self, dpid, mac_src, mac_dst, out_port):
-        """Push new flow entry to a switch. Replace existing flow entry."""
+    def _add_flow(self, dpid, mac_src, mac_dst, out_port):
+        """Add new flow entry to a switch. Replace existing flow entry."""
+
         # delete existing flows
         self._del_flow(dpid, mac_src, mac_dst)
+
         # create flow add message
         msg = of.ofp_flow_mod(command=of.OFPFC_ADD)
         msg.match = of.ofp_match(dl_src=self._ethaddr(mac_src), dl_dst=self._ethaddr(mac_dst))
         msg.actions.append(of.ofp_action_output(port=out_port))
+
         # send flow message to switch
         core.openflow.connections[dpid].send(msg)
+
+        # update flow table
+        self._flow_table.add_flow(dpid, mac_src, mac_dst, out_port)
 
     def _del_flow(self, dpid, mac_src=None, mac_dst=None, out_port=of.OFPP_NONE):
         """Remove flow entries from a switch."""
         if mac_src is not None:
-            mac_src = self._ethaddr(mac_src)
+            eth_src = self._ethaddr(mac_src)
         if mac_dst is not None:
-            mac_dst = self._ethaddr(mac_dst)
+            eth_dst = self._ethaddr(mac_dst)
+
         # create flow remove message
         msg = of.ofp_flow_mod(command=of.OFPFC_DELETE, out_port=out_port)
-        msg.match = of.ofp_match(dl_src=mac_src, dl_dst=mac_dst)
+        msg.match = of.ofp_match(dl_src=eth_src, dl_dst=eth_dst)
+
         # send flow message to switch
         core.openflow.connections[dpid].send(msg)
+
+        # update local flow table
+        out_port = None if out_port == of.OFPP_NONE else out_port
+        self._flow_table.del_flow(dpid, mac_src, mac_dst, out_port)
 
     def _select_proxy(self, tpl_src, tpl_dst, pref):
         """Select a proxy node if the middle link between two nodes fail."""
