@@ -19,7 +19,7 @@ class Controller(object):
         """Create a Controller instance."""
 
         # get number of hosts and switches
-        self._num_hosts, self._num_switches = comm.dcell_count()
+        self._num_hosts, self._num_switches = comm.count_nodes()
 
         # counter for connected switches
         self._num_connect = 0
@@ -27,7 +27,7 @@ class Controller(object):
 
         # broken links
         self._bad_links = set()
-        self._mutex_bad_links = Lock()
+        self._mutex_link_update = Lock()
 
         # add event handlers
         core.listen_to_dependencies(self)
@@ -40,19 +40,20 @@ class Controller(object):
         """Triggered when a link is added or removed."""
 
         # get link with normalized dpid order
-        link = (event.link.uni.dpid1, event.link.uni.dpid2)
+        link = event.link.uni
+        link_tpl = (link.dpid1, link.dpid2)
 
-        with self._mutex_bad_links:
+        with self._mutex_link_update:
 
             if event.added:  # link added
-                if link in self._bad_links:
-                    self._bad_links.discard(link)
-                    log.info("LinkEvent | ({},{}) up".format(link[0], link[1]))
+                if link_tpl in self._bad_links:
+                    self._bad_links.discard(link_tpl)
+                    log.info("LinkEvent | ({},{}) up".format(link_tpl[0], link_tpl[1]))
 
             elif event.removed:  # link removed
-                if link not in self._bad_links:
-                    self._bad_links.add(link)
-                    log.info("LinkEvent | ({},{}) down".format(link[0], link[1]))
+                if link_tpl not in self._bad_links:
+                    self._bad_links.add(link_tpl)
+                    log.info("LinkEvent | ({},{}) down".format(link_tpl[0], link_tpl[1]))
 
     def _handle_openflow_ConnectionUp(self, event):
         """Triggered when a switch is connected to the controller."""
@@ -73,13 +74,18 @@ class Controller(object):
             for j in range(i + 1, self._num_hosts):
                 self._build_route(i + 1, j + 1)
 
-    def _build_route(self, mac_src, mac_dst):
+    def _build_route(self, mac_src, mac_dst, update=False):
         """Build routing path between two hosts.
 
         Args:
             mac_src (int): MAC address of source host
             mac_dst (int): MAC address of destination host
+            update (bool): Whether to update existed flow entries
         """
+        def _push_flow(dpid, mac_src, mac_dst, port_dst):
+            """Wrapper for self._push_flow."""
+            return self._push_flow(dpid, mac_src, mac_dst, port_dst, update)
+
         def _build_dcell_route(tpl_src, tpl_dst):
             """DCellRouting(src, dst) from the paper."""
 
@@ -93,17 +99,37 @@ class Controller(object):
             pref_len = len(pref)
 
             if pref_len == comm.DCELL_K:  # same DCell_0
+
+                # add flow entries to mini switch
                 mini_dpid = self._mini_dpid(comm.host_id(tpl_src))
-                self._push_flow(comm.host_id(tpl_src), mac_src, mac_dst, 2)
-                self._push_flow(comm.host_id(tpl_dst), mac_dst, mac_src, 2)
-                self._push_flow(mini_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
-                self._push_flow(mini_dpid, mac_dst, mac_src, tpl_src[-1] % comm.DCELL_N + 1)
+                _push_flow(mini_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
+                _push_flow(mini_dpid, mac_dst, mac_src, tpl_src[-1] % comm.DCELL_N + 1)
+
+                # add flow entries to host switches
+                out_port = 2  # port 2 connected to mini switch
+                _push_flow(comm.host_id(tpl_src), mac_src, mac_dst, out_port)
+                _push_flow(comm.host_id(tpl_dst), mac_dst, mac_src, out_port)
+
                 return
 
-            # link between two sub DCells
+            # get the link connecting two sub DCells
             mid_src, mid_dst = self._middle_link(pref, tpl_src[pref_len], tpl_dst[pref_len])
-            self._push_flow(comm.host_id(mid_src), mac_src, mac_dst, comm.DCELL_K - pref_len + 2)
-            self._push_flow(comm.host_id(mid_dst), mac_dst, mac_src, comm.DCELL_K - pref_len + 2)
+
+            # route to proxy if middle link is broken
+            if self._is_bad_link(mid_src, mid_dst):
+                proxy = self._select_proxy(tpl_src, tpl_dst, pref)
+                if proxy is None:
+                    log.warn("build_dcell_route | no proxy node | src={} | dst={}"
+                             .format(tpl_src, tpl_dst))
+                else:
+                    _build_dcell_route(tpl_src, proxy)
+                    _build_dcell_route(proxy, tpl_dst)
+                return
+
+            # update routing tables on the middle link switches
+            out_port = comm.DCELL_K - pref_len + 2
+            _push_flow(comm.host_id(mid_src), mac_src, mac_dst, out_port)
+            _push_flow(comm.host_id(mid_dst), mac_dst, mac_src, out_port)
 
             # build routes recursively
             _build_dcell_route(tpl_src, mid_src)
@@ -113,24 +139,53 @@ class Controller(object):
         _build_dcell_route(comm.tuple_id(mac_src), comm.tuple_id(mac_dst))
 
         # build routes from switches to hosts
-        self._push_flow(mac_src, mac_dst, mac_src, 1)  # port 1 connected to host
-        self._push_flow(mac_dst, mac_src, mac_dst, 1)  # port 1 connected to host
+        out_port = 1  # port 1 connected to host
+        _push_flow(mac_src, mac_dst, mac_src, out_port)
+        _push_flow(mac_dst, mac_src, mac_dst, out_port)
 
-    def _push_flow(self, dpid, mac_src, mac_dst, port_dst):
+    def _push_flow(self, dpid, mac_src, mac_dst, port_dst, update):
         """Push new flow entry to a switch.
 
         Args:
             dpid (int): data path id of the switch to push the flow entry
             mac_src (int): MAC address of source host
             mac_dst (int): MAC address of destination host
-            port_dst (int): output port of the flow entry
+            port_dst (int): Output port of the flow entry
+            update (bool): Whether to update existed flow entries
         """
         # create flow message
-        msg = of.ofp_flow_mod()
+        msg = of.ofp_flow_mod(command=of.OFPFC_MODIFY if update else of.OFPFC_ADD)
         msg.match = of.ofp_match(dl_src=self._ethaddr(mac_src), dl_dst=self._ethaddr(mac_dst))
         msg.actions.append(of.ofp_action_output(port=port_dst))
         # send flow message to switch
         core.openflow.connections[dpid].send(msg)
+
+    def _select_proxy(self, tpl_src, tpl_dst, pref):
+        """Select a proxy node if the middle link between two nodes fail."""
+        pref_len = len(pref)
+        num_dcells = comm.count_dcells(comm.DCELL_K - pref_len)  # number of DCell_(k-1)
+
+        # check neighbor DCells one by one
+        for i in range(1, num_dcells):
+
+            idx = (tpl_src[pref_len] + i) % num_dcells
+            if idx == tpl_dst[pref_len]:
+                continue  # cannot directly route to destination due to broken link
+
+            mid_src, mid_dst = self._middle_link(pref, tpl_src[pref_len], idx)
+            if self._is_bad_link(mid_src, mid_dst):
+                continue  # broken middle link
+
+            return mid_dst  # selected proxy node
+
+        return None  # no proxy node
+
+    def _is_bad_link(self, tuple1, tuple2):
+        """Check whether the link between two switches is broken."""
+        host1, host2 = comm.host_id(tuple1), comm.host_id(tuple2)
+        if host1 > host2:
+            host1, host2 = host2, host1
+        return (host1, host2) in self._bad_links
 
     def _middle_link(self, pref, src_idx, dst_idx):
         """Get the middle links that connects two sub DCells."""

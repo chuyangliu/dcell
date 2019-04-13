@@ -42,7 +42,7 @@ class DCellTopo(Topo):
         self._switches = {}  # (k+1)-tuple -> switch name
         self._nhost = 1
         self._nswitch = 1
-        self._nswitch0, nswitch = comm.dcell_count()
+        self._nswitch0, nswitch = comm.count_nodes()
 
         def build_helper(self, pref, n, level):
             if level == 0: # build DCell_0

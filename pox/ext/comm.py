@@ -42,8 +42,8 @@ def ip_to_mac(ip):
     return mac_to_str(ip_int - IP_BASE)
 
 
-def dcell_count(k=DCELL_K, n=DCELL_N):
-    """Calculate total number of hosts and switches in current DCell.
+def count_nodes(k=DCELL_K, n=DCELL_N):
+    """Count total number of hosts and switches in a given DCell.
 
     Args:
         k (int): Level of DCell to calculate
@@ -64,6 +64,23 @@ def dcell_count(k=DCELL_K, n=DCELL_N):
     num_switches += num_hosts
 
     return num_hosts, num_switches
+
+
+def count_dcells(k=DCELL_K, n=DCELL_N):
+    """Count number of DCell_(k-1) in a given DCell.
+
+    Args:
+        k (int): Level of DCell to calculate
+        n (int): Number of hosts in a DCell_0
+
+    Returns:
+        num_dcells (int): number of DCell_(k-1) in the DCell
+    """
+    num_dcells, num_hosts = 1, n
+    for _ in range(k):
+        num_dcells = num_hosts + 1
+        num_hosts = num_dcells * num_hosts
+    return num_dcells
 
 
 def tuple_id(host_id, k=DCELL_K, n=DCELL_N):
