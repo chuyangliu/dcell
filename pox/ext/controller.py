@@ -17,34 +17,54 @@ class Controller(object):
 
     def __init__(self):
         """Create a Controller instance."""
-        self._mutex = Lock()
 
-        # compute number of hosts and switches
+        # get number of hosts and switches
         self._num_hosts, self._num_switches = comm.dcell_count()
-        self._num_connected = 0
+
+        # counter for connected switches
+        self._num_connect = 0
+        self._mutex_num_connect = Lock()
+
+        # broken links
+        self._bad_links = set()
+        self._mutex_bad_links = Lock()
+
+        # add event handlers
+        core.listen_to_dependencies(self)
 
         # log DCell info
         log.info("init | dcell_k={} | dcell_n={} | num_hosts={} | num_switches={}" \
                  .format(comm.DCELL_K, comm.DCELL_N, self._num_hosts, self._num_switches))
 
-        # add event handlers
-        core.listen_to_dependencies(self)
-
     def _handle_openflow_discovery_LinkEvent(self, event):
         """Triggered when a link is added or removed."""
-        link = event.link
-        if event.added:  # link added
-            log.info("LinkEvent | ({},{}) up".format(link.dpid1, link.dpid2))
-        elif event.removed:  # link removed
-            log.info("LinkEvent | ({},{}) down".format(link.dpid1, link.dpid2))
+
+        # get link with normalized dpid order
+        link = (event.link.uni.dpid1, event.link.uni.dpid2)
+
+        with self._mutex_bad_links:
+
+            if event.added:  # link added
+                if link in self._bad_links:
+                    self._bad_links.discard(link)
+                    log.info("LinkEvent | ({},{}) up".format(link[0], link[1]))
+
+            elif event.removed:  # link removed
+                if link not in self._bad_links:
+                    self._bad_links.add(link)
+                    log.info("LinkEvent | ({},{}) down".format(link[0], link[1]))
 
     def _handle_openflow_ConnectionUp(self, event):
         """Triggered when a switch is connected to the controller."""
+
+        # add event handlers to the switch
+        Switch(event.connection)
         log.info("ConnectionUp | dpid={}".format(event.dpid))
-        Switch(event.connection)  # add event handlers to the switch
-        with self._mutex:
-            self._num_connected += 1
-            if self._num_connected == self._num_switches:
+
+        # check connected switches
+        with self._mutex_num_connect:
+            self._num_connect += 1
+            if self._num_connect == self._num_switches:
                 self._build_all_routes()  # build routing tables after all switches connected
 
     def _build_all_routes(self):
