@@ -8,7 +8,7 @@ DEBUG_POX = False
 # DCell level to build and test
 DCELL_K = 1
 # number of hosts in a DCell_0
-DCELL_N = 3
+DCELL_N = 4
 # data link bandwidth (Mbps)
 LINK_BW = 100
 # data link heartbeat timeout (seconds)
