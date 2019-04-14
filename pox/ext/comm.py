@@ -12,6 +12,7 @@ DCELL_N = 3
 # data link bandwidth (Mbps)
 LINK_BW = 100
 # data link heartbeat timeout (seconds)
+# note: setting too low might falsely consider a good link failed, thus trigger routes rebuild
 LINK_TIMEOUT = 1
 # switch class
 SWITCH_CLS = OVSKernelSwitch

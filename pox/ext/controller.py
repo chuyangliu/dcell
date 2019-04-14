@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # pylint: disable=missing-docstring,invalid-name
 
+import numbers
 from multiprocessing import Lock
 
 from pox.core import core
@@ -60,7 +61,7 @@ class FlowTable(object):
         if dpid in self._table:
             if out_port is None:
                 for _, tuples in self._table[dpid].iteritems():
-                    addrs.union(tuples)
+                    addrs = addrs.union(tuples)
             elif out_port in self._table[dpid]:
                 addrs = self._table[dpid][out_port]
         return addrs
@@ -102,30 +103,32 @@ class Controller(object):
         link_tuple = (link.dpid1, link.dpid2)
 
         with self._mutex_link_state:
-            rebuild_routes = set([])
+            rebuild = set()
 
             if event.added and link_tuple in self._bad_links:  # link recovered
-                log.info("LinkEvent | ({},{}) up".format(link.dpid1, link.dpid2))
                 self._bad_links.discard(link_tuple)
+                log.info("LinkEvent | ({}:{},{}:{}) up"
+                         .format(link.dpid1, link.port1, link.dpid2, link.port2))
 
                 # rebuild all routes that pass the two switches
                 # edge case: middle link broken and recovered, when mac_src == mid_src
-                rebuild_routes.union(self._flow_table.flow_addrs(link.dpid1))
-                rebuild_routes.union(self._flow_table.flow_addrs(link.dpid2))
+                rebuild = rebuild.union(self._flow_table.flow_addrs(link.dpid1))
+                rebuild = rebuild.union(self._flow_table.flow_addrs(link.dpid2))
 
             elif event.removed and link_tuple not in self._bad_links:  # link broken
-                log.info("LinkEvent | ({},{}) down".format(link.dpid1, link.dpid2))
                 self._bad_links.add(link_tuple)
+                log.info("LinkEvent | ({}:{},{}:{}) down"
+                         .format(link.dpid1, link.port1, link.dpid2, link.port2))
 
                 # rebuild all routes that pass the broken link
-                rebuild_routes.union(self._flow_table.flow_addrs(link.dpid1, link.port1))
-                rebuild_routes.union(self._flow_table.flow_addrs(link.dpid2, link.port2))
+                rebuild = rebuild.union(self._flow_table.flow_addrs(link.dpid1, link.port1))
+                rebuild = rebuild.union(self._flow_table.flow_addrs(link.dpid2, link.port2))
 
             # rebuild routes
-            for mac_src, mac_dst in rebuild_routes:
-                self._build_route(mac_src, mac_dst)
+            for mac_src, mac_dst in rebuild:
                 log.debug("LinkEvent | rebuild routes | ({}) => ({})"
                           .format(comm.tuple_id(mac_src), comm.tuple_id(mac_dst)))
+                self._build_route(mac_src, mac_dst)
 
     def _handle_openflow_ConnectionUp(self, event):
         """Triggered when a switch is connected to the controller."""
@@ -168,11 +171,22 @@ class Controller(object):
             pref_len = len(pref)
 
             if pref_len == comm.DCELL_K:  # same DCell_0
-                # add flow entries to mini switch
+
+                # check mini switch connection
                 mini_dpid = self._mini_dpid(comm.host_id(tpl_src))
+                bad_mini_in = self._is_bad_link(mini_dpid, tpl_src)
+                bad_mini_out = self._is_bad_link(mini_dpid, tpl_dst)
+                if bad_mini_in or bad_mini_out:
+                    # rack failure handle not implemented
+                    log.error("build_dcell_route | cannot handle rack failure | mini_switch={}"
+                              .format(mini_dpid))
+                    return
+
+                # add flow entries to mini switch
                 self._add_flow(mini_dpid, mac_src, mac_dst, tpl_dst[-1] % comm.DCELL_N + 1)
-                # add flow entries to host switches (port 2 connected to mini switch)
+                # add flow entries to host switch (port 2 connected to mini switch)
                 self._add_flow(comm.host_id(tpl_src), mac_src, mac_dst, 2)
+
                 return
 
             # get the link connecting two sub DCells
@@ -258,9 +272,10 @@ class Controller(object):
 
         return None  # no proxy node
 
-    def _is_bad_link(self, tuple1, tuple2):
+    def _is_bad_link(self, s1, s2):
         """Check whether the link between two switches is broken."""
-        host1, host2 = comm.host_id(tuple1), comm.host_id(tuple2)
+        host1 = s1 if isinstance(s1, numbers.Integral) else comm.host_id(s1)
+        host2 = s2 if isinstance(s2, numbers.Integral) else comm.host_id(s2)
         if host1 > host2:
             host1, host2 = host2, host1
         return (host1, host2) in self._bad_links
