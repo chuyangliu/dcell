@@ -92,7 +92,7 @@ class Controller(object):
         core.listen_to_dependencies(self)
 
         # log DCell info
-        log.info("init | dcell_k={} | dcell_n={} | num_hosts={} | num_switches={}" \
+        log.info("DCellController init | dcell_k={} | dcell_n={} | num_hosts={} | num_switches={}" \
                  .format(comm.DCELL_K, comm.DCELL_N, self._num_hosts, self._num_switches))
 
     def _handle_openflow_discovery_LinkEvent(self, event):

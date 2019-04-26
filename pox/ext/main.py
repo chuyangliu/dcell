@@ -32,8 +32,27 @@ class DCellController(Controller):
                 "{} "
                 "openflow.of_01 --port=%d "
                 "openflow.discovery --link_timeout={} "
-                "controller"
+                "dcell_controller"
                 .format("--verbose log.level --DEBUG" if comm.DEBUG_POX else "", comm.LINK_TIMEOUT)
+            )
+        }
+        Controller.__init__(self, **args)
+
+
+class TreeController(Controller):
+    """
+    Run a POX controller for tree structure routing in a separate process.
+    Log location: /tmp/c0.log
+    """
+    def __init__(self, name):
+        args = {
+            "name": name,
+            "command": "../pox.py",
+            "cargs": (
+                "{} "
+                "openflow.of_01 --port=%d "
+                "tree_controller"
+                .format("--verbose log.level --DEBUG" if comm.DEBUG_POX else "")
             )
         }
         Controller.__init__(self, **args)
@@ -43,7 +62,7 @@ def testFaultTolerance():
     """Fault-tolerance test in Section 7.3 of the DCell paper."""
     SERVER_LOG = os.path.join(comm.DIR_LOG, "fault_server.log")
     CLIENT_LOG = os.path.join(comm.DIR_LOG, "fault_client.log")
-    FIGURE = os.path.join(comm.DIR_FIGURE, "fault.png")
+    FIGURE = os.path.join(comm.DIR_FIGURE, "fault_tolerance.png")
     DURATION = 160  # seconds
 
     if comm.DCELL_K != 1 or comm.DCELL_N != 4:
@@ -90,17 +109,19 @@ def testFaultTolerance():
     print "104s: (0,3) down"
     time.sleep(60)
 
-    # plot throughput
+    # build figure
     throughputs = []
     with open(CLIENT_LOG, "r") as f:
         for line in f.readlines():
             throughputs.append(int(line.strip().split(",")[-1]) / 1e6)  # Mbps
     plt.plot(range(len(throughputs)), throughputs, "r")
+    plt.title("Fault-Tolerance Test")
     plt.xlabel("Time (second)")
     plt.ylabel("TCP Throughput (Mb/s)")
     plt.savefig(FIGURE)
 
     # stop net
+    print ""
     net.stop()
 
 
@@ -108,10 +129,9 @@ def testNetworkCapacity():
     """Network capacity test in Section 7.3 of the DCell paper."""
     SERVER_LOG = os.path.join(comm.DIR_LOG, "capacity_server_{}.log")
     CLIENT_LOG = os.path.join(comm.DIR_LOG, "capacity_client_{}_{}.log")
-    FIGURE = os.path.join(comm.DIR_FIGURE, "capacity.png")
-    DURATION = 800  # seconds
+    FIGURE = os.path.join(comm.DIR_FIGURE, "network_capacity.png")
+    DURATION = 30  # seconds
     DATA_SIZE = "250M"
-
 
     if comm.DCELL_K != 1 or comm.DCELL_N != 4:
         print "Failed: require level-1 DCell with n=4"
@@ -119,7 +139,11 @@ def testNetworkCapacity():
 
     def test(tree):
         # create net
-        net = Mininet(topo=DCellTopo(tree=tree), link=TCLink, controller=DCellController)
+        net = Mininet(
+            topo=DCellTopo(tree=tree),
+            link=TCLink,
+            controller=TreeController if tree else DCellController
+        )
         net.start()
         print "Waiting controller setup..."
         time.sleep(5)
@@ -150,10 +174,37 @@ def testNetworkCapacity():
         # wait client finish
         time.sleep(DURATION)
 
+        # compute average throughputs of all connections
+        throughputs = []
+        for i in range(1, 21):
+            for j in range(1, 21):
+                if i != j:
+                    with open(CLIENT_LOG.format(i, j), "r") as f:
+                        for t, line in enumerate(f.readlines()):
+                            thru = int(line.strip().split(",")[-1]) / 1e6  # Mbps
+                            if t >= len(throughputs):
+                                throughputs.append([1, thru])
+                            else:
+                                throughputs[t][0] += 1
+                                throughputs[t][1] += thru
+        for i, entry in enumerate(throughputs):
+            throughputs[i] = entry[1] / entry[0]  # compute average
+
         # stop net
+        print ""
         net.stop()
 
-    test(tree=False)
+        return throughputs
+
+    # test DCell topology and tree topology
+    thru_dcell, thru_tree = test(tree=False), test(tree=True)
+    plt.plot(range(len(thru_dcell)), thru_dcell, "r", label="DCell")
+    plt.plot(range(len(thru_tree)), thru_tree, "g", label="Tree")
+    plt.legend(loc="upper right")
+    plt.title("Network Capacity Test")
+    plt.xlabel("Time (second)")
+    plt.ylabel("TCP Throughput (Mb/s)")
+    plt.savefig(FIGURE)
 
 
 def main():
@@ -169,8 +220,8 @@ def main():
         net.stop()
     else:  # run tests
         testFaultTolerance()
-        # testNetworkCapacity()
-        print "\nFinished: please see directory \"figures\" for details\n"
+        testNetworkCapacity()
+        print "\nFinished: please see directory \"figures\" for details"
 
 
 if __name__ == "__main__":

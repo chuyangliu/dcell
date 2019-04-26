@@ -20,20 +20,21 @@ class DCellTopo(Topo):
             self._build_dcell()
 
     def _build_tree(self):
-        # 2-level tree
-        h1 = self._add_host("h1")
-        h2 = self._add_host("h2")
-        h3 = self._add_host("h3")
-        h4 = self._add_host("h4")
-        s1 = self._add_switch("s1")
-        s2 = self._add_switch("s2")
-        s3 = self._add_switch("s3")
-        self._add_link(s1, h1)
-        self._add_link(s1, h2)
-        self._add_link(s2, h3)
-        self._add_link(s3, h4)
-        self._add_link(s3, s1)
-        self._add_link(s3, s2)
+        """Build a two-level tree that has 20 servers for testing."""
+        print "build_tree"
+        switches = []
+        switches.append(self._add_switch("s1"))
+        switches.append(self._add_switch("s2"))
+        switches.append(self._add_switch("s3"))
+        switches.append(self._add_switch("s4"))
+        switches.append(self._add_switch("s5"))
+        switches.append(self._add_switch("s6"))
+        for i in range(5):
+            self._add_link(switches[5], switches[i])
+        for i in range(20):
+            host_name = "h" + str(i + 1)
+            host = self._add_host(host_name)
+            self._add_link(host, switches[i / 4])
 
     def _build_dcell(self):
         print "build_dcell | dcell_k={} | dcell_n={}".format(comm.DCELL_K, comm.DCELL_N)
