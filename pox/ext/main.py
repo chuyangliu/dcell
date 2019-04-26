@@ -5,15 +5,15 @@ import os
 import sys
 import time
 
+import matplotlib
+matplotlib.use("Agg")  # do not use any Xwindows backend
+import matplotlib.pyplot as plt
+
 from mininet.node import Controller
 from mininet.net import Mininet
 from mininet.link import TCLink
 from mininet.cli import CLI
 from mininet.log import setLogLevel
-
-import matplotlib
-matplotlib.use("Agg")  # do not use any Xwindows backend
-import matplotlib.pyplot as plt
 
 import comm
 from topo import DCellTopo
@@ -39,32 +39,39 @@ class DCellController(Controller):
         Controller.__init__(self, **args)
 
 
-def testFaultTolerance(net):
+def testFaultTolerance():
     """Fault-tolerance test in Section 7.3 of the DCell paper."""
-    IPERF_SERVER_LOG = os.path.join(comm.DIR_RESULTS, "fault_iperf_server.log")
-    IPERF_CLIENT_LOG = os.path.join(comm.DIR_RESULTS, "fault_iperf_client.log")
-    FIGURE = os.path.join(comm.DIR_RESULTS, "fault_figure.png")
+    SERVER_LOG = os.path.join(comm.DIR_LOG, "fault_server.log")
+    CLIENT_LOG = os.path.join(comm.DIR_LOG, "fault_client.log")
+    FIGURE = os.path.join(comm.DIR_FIGURE, "fault.png")
     DURATION = 160  # seconds
-
-    print "\n[Fault-Tolerance Test]"
 
     if comm.DCELL_K != 1 or comm.DCELL_N != 4:
         print "Failed: require level-1 DCell with n=4"
         return
 
-    # create results directory
-    if not os.path.exists(comm.DIR_RESULTS):
-        os.mkdir(comm.DIR_RESULTS)
+    # create net
+    net = Mininet(topo=DCellTopo(tree=False), link=TCLink, controller=DCellController)
+    net.start()
+    print "Waiting controller setup..."
+    time.sleep(5)
+    print "\n[Fault-Tolerance Test]"
 
-    # start iperf server on node (4,3)
+    # create results directory
+    if not os.path.exists(comm.DIR_LOG):
+        os.mkdir(comm.DIR_LOG)
+    if not os.path.exists(comm.DIR_FIGURE):
+        os.mkdir(comm.DIR_FIGURE)
+
+    # start iperf server on host (4,3)
     print "Running iperf server..."
-    net["h20"].cmd("iperf -s >{} 2>&1 &".format(IPERF_SERVER_LOG))
+    net["h20"].cmd("iperf -s >{} 2>&1 &".format(SERVER_LOG))
     time.sleep(1)
 
-    # start iperf client on node (0,0)
+    # start iperf client on host (0,0)
     print "Running iperf client (estimated duration: {} seconds)...".format(DURATION)
     net["h1"].cmd("iperf -c 10.0.0.20 -t {} -i 1 -y c >{} 2>&1 &"
-                  .format(DURATION, IPERF_CLIENT_LOG))
+                  .format(DURATION, CLIENT_LOG))
 
     # unplug link (0,3)-(4,0) at time 34s
     time.sleep(34)
@@ -85,54 +92,85 @@ def testFaultTolerance(net):
 
     # plot throughput
     throughputs = []
-    with open(IPERF_CLIENT_LOG, "r") as f:
+    with open(CLIENT_LOG, "r") as f:
         for line in f.readlines():
             throughputs.append(int(line.strip().split(",")[-1]) / 1e6)  # Mbps
     plt.plot(range(len(throughputs)), throughputs, "r")
     plt.xlabel("Time (second)")
     plt.ylabel("TCP Throughput (Mb/s)")
     plt.savefig(FIGURE)
-    print "Finished: please see directory \"results\" for details"
 
-    print ""
+    # stop net
+    net.stop()
 
 
-def testNetworkCapacity(net):
+def testNetworkCapacity():
     """Network capacity test in Section 7.3 of the DCell paper."""
-    IPERF_SERVER_LOG = os.path.join(comm.DIR_RESULTS, "capacity_iperf_server.log")
-    IPERF_CLIENT_LOG = os.path.join(comm.DIR_RESULTS, "capacity_iperf_client.log")
-    FIGURE = os.path.join(comm.DIR_RESULTS, "capacity_figure.png")
-    DURATION = 160  # seconds
+    SERVER_LOG = os.path.join(comm.DIR_LOG, "capacity_server_{}.log")
+    CLIENT_LOG = os.path.join(comm.DIR_LOG, "capacity_client_{}_{}.log")
+    FIGURE = os.path.join(comm.DIR_FIGURE, "capacity.png")
+    DURATION = 800  # seconds
+    DATA_SIZE = "250M"
 
-    print "\n[Network Capacity Test]"
 
     if comm.DCELL_K != 1 or comm.DCELL_N != 4:
         print "Failed: require level-1 DCell with n=4"
         return
 
-    print ""
+    def test(tree):
+        # create net
+        net = Mininet(topo=DCellTopo(tree=tree), link=TCLink, controller=DCellController)
+        net.start()
+        print "Waiting controller setup..."
+        time.sleep(5)
+        print "\n[Network Capacity Test - {}]".format("Tree" if tree else "DCell")
+
+        # create results directory
+        if not os.path.exists(comm.DIR_LOG):
+            os.mkdir(comm.DIR_LOG)
+        if not os.path.exists(comm.DIR_FIGURE):
+            os.mkdir(comm.DIR_FIGURE)
+
+        # start iperf server on each host
+        print "Running iperf server..."
+        for i in range(1, 21):
+            host_name = "h" + str(i)
+            net[host_name].cmd("iperf -s >{} 2>&1 &".format(SERVER_LOG.format(i)))
+        time.sleep(1)
+
+        # start iperf client on each host
+        print "Running iperf client (estimated duration: {} seconds)...".format(DURATION)
+        for i in range(1, 21):
+            for j in range(1, 21):
+                if i != j:
+                    host_name = "h" + str(i)
+                    net[host_name].cmd("iperf -c 10.0.0.{} -n {} -i 1 -y c >{} 2>&1 &"
+                                       .format(j, DATA_SIZE, CLIENT_LOG.format(i, j)))
+
+        # wait client finish
+        time.sleep(DURATION)
+
+        # stop net
+        net.stop()
+
+    test(tree=False)
 
 
 def main():
     # command-line args
     cli = len(sys.argv) >= 2 and sys.argv[1] == "cli"
 
-    # start a net
-    net = Mininet(topo=DCellTopo(), link=TCLink, controller=DCellController)
-    net.start()
-
-    # wait controller starts
-    print "Waiting controller setup..."
-    time.sleep(5)
-
     if cli:  # run Mininet CLI
+        net = Mininet(topo=DCellTopo(tree=False), link=TCLink, controller=DCellController)
+        net.start()
+        print "Waiting controller setup..."
+        time.sleep(3)
         CLI(net)
+        net.stop()
     else:  # run tests
-        testFaultTolerance(net)
-        testNetworkCapacity(net)
-
-    # stop net
-    net.stop()
+        testFaultTolerance()
+        # testNetworkCapacity()
+        print "\nFinished: please see directory \"figures\" for details\n"
 
 
 if __name__ == "__main__":

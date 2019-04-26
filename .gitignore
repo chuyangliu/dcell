@@ -19,4 +19,5 @@ pox/lib/pxpcap/pxpcap_c/WpdPack
 pox/lib/pxpcap/pxpcap.so
 pypy/
 *.html
-results/
+figures/
+logs/
