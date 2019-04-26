@@ -65,18 +65,18 @@ def testFaultTolerance(net):
 
     # unplug link (0,3)-(4,0) at time 34s
     time.sleep(34)
-    net.configLinkStatus("h4", "h17", "down")
+    net.configLinkStatus("s4", "s17", "down")
     print "34s: (0,3)-(4,0) down"
 
     # replug link (0,3)-(4,0) at time 42s
     time.sleep(8)
-    net.configLinkStatus("h4", "h17", "up")
+    net.configLinkStatus("s4", "s17", "up")
     print "42s: (0,3)-(4,0) up"
 
     # shutdown (0,3) at time 104s
     time.sleep(62)
-    net.configLinkStatus("h4", "h17", "down")
-    net.configLinkStatus("h4", "h21", "down")
+    net.configLinkStatus("s4", "s17", "down")
+    net.configLinkStatus("s4", "s21", "down")
     print "104s: (0,3) down"
     time.sleep(60)
 
