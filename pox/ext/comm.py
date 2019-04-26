@@ -5,15 +5,22 @@ from mininet.node import OVSKernelSwitch
 
 # whether run POX in debug mode
 DEBUG_POX = False
+# whether to use DCell topology, set to False if use Tree topology
+DCELL = True
 # DCell level to build and test
 DCELL_K = 1
 # number of hosts in a DCell_0
 DCELL_N = 4
+
 # data link bandwidth (Mbps)
 LINK_BW = 100
 # data link heartbeat timeout (seconds)
 # note: setting too low might falsely consider a good link failed, thus trigger routes rebuild
 LINK_TIMEOUT = 1
+
+# directory to store test results
+DIR_RESULTS = "../../results"
+
 # switch class
 SWITCH_CLS = OVSKernelSwitch
 # base value for IP addresses

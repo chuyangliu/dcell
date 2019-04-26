@@ -16,7 +16,13 @@
     $ mininet/util/install.sh -a
     ```
 
-2. Run DCell benchmarks
+2. Install libraries:
+
+    ```
+    $ pip install -r requirements.txt
+    ```
+
+3. Run DCell benchmarks
 
     ```
     $ sudo ./run.sh [cli]

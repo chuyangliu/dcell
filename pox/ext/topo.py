@@ -8,19 +8,15 @@ import comm
 
 class DCellTopo(Topo):
 
-    def build(self, tree):
-        """Build a DCell network topology, called by Topo.__init__().
-
-        Args:
-            tree (bool): whether to build a tree topology (for testing)
-        """
-        if tree:
-            self._build_tree()
-        else:
+    def build(self):
+        """Build a DCell network topology, called by Topo.__init__()."""
+        if comm.DCELL:
             self._build_dcell()
+        else:
+            self._build_tree()
 
     def _build_tree(self):
-        # 2-layer tree
+        # 2-level tree
         h1 = self._add_host("h1")
         h2 = self._add_host("h2")
         h3 = self._add_host("h3")
