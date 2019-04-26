@@ -10,6 +10,9 @@ from mininet.net import Mininet
 from mininet.link import TCLink
 from mininet.cli import CLI
 from mininet.log import setLogLevel
+
+import matplotlib
+matplotlib.use("Agg")  # do not use any Xwindows backend
 import matplotlib.pyplot as plt
 
 import comm
