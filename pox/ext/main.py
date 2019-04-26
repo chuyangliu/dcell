@@ -94,6 +94,22 @@ def testFaultTolerance(net):
     print ""
 
 
+def testNetworkCapacity(net):
+    """Network capacity test in Section 7.3 of the DCell paper."""
+    IPERF_SERVER_LOG = os.path.join(comm.DIR_RESULTS, "capacity_iperf_server.log")
+    IPERF_CLIENT_LOG = os.path.join(comm.DIR_RESULTS, "capacity_iperf_client.log")
+    FIGURE = os.path.join(comm.DIR_RESULTS, "capacity_figure.png")
+    DURATION = 160  # seconds
+
+    print "\n[Network Capacity Test]"
+
+    if comm.DCELL_K != 1 or comm.DCELL_N != 4:
+        print "Failed: require level-1 DCell with n=4"
+        return
+
+    print ""
+
+
 def main():
     # command-line args
     cli = len(sys.argv) >= 2 and sys.argv[1] == "cli"
@@ -110,6 +126,7 @@ def main():
         CLI(net)
     else:  # run tests
         testFaultTolerance(net)
+        testNetworkCapacity(net)
 
     # stop net
     net.stop()
