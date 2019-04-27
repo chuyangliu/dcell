@@ -74,6 +74,7 @@ def testFaultTolerance():
     net.start()
     print "Waiting controller setup..."
     time.sleep(5)
+    net.pingAll()
     print "\n[Fault-Tolerance Test]"
 
     # create results directory
@@ -119,6 +120,7 @@ def testFaultTolerance():
     plt.xlabel("Time (second)")
     plt.ylabel("TCP Throughput (Mb/s)")
     plt.savefig(FIGURE)
+    plt.clf()
 
     # stop net
     print ""
@@ -130,7 +132,7 @@ def testNetworkCapacity():
     SERVER_LOG = os.path.join(comm.DIR_LOG, "capacity_server_{}.log")
     CLIENT_LOG = os.path.join(comm.DIR_LOG, "capacity_client_{}_{}.log")
     FIGURE = os.path.join(comm.DIR_FIGURE, "network_capacity.png")
-    DURATION = 30  # seconds
+    DURATION = 1200  # seconds
     DATA_SIZE = "250M"
 
     if comm.DCELL_K != 1 or comm.DCELL_N != 4:
@@ -147,6 +149,7 @@ def testNetworkCapacity():
         net.start()
         print "Waiting controller setup..."
         time.sleep(5)
+        net.pingAll()
         print "\n[Network Capacity Test - {}]".format("Tree" if tree else "DCell")
 
         # create results directory
@@ -174,7 +177,7 @@ def testNetworkCapacity():
         # wait client finish
         time.sleep(DURATION)
 
-        # compute average throughputs of all connections
+        # compute aggregated throughputs every seconds
         throughputs = []
         for i in range(1, 21):
             for j in range(1, 21):
@@ -183,12 +186,10 @@ def testNetworkCapacity():
                         for t, line in enumerate(f.readlines()):
                             thru = int(line.strip().split(",")[-1]) / 1e6  # Mbps
                             if t >= len(throughputs):
-                                throughputs.append([1, thru])
+                                throughputs.append(thru)
                             else:
-                                throughputs[t][0] += 1
-                                throughputs[t][1] += thru
-        for i, entry in enumerate(throughputs):
-            throughputs[i] = entry[1] / entry[0]  # compute average
+                                throughputs[t] += thru
+        throughputs.append(0)
 
         # stop net
         print ""
@@ -203,8 +204,9 @@ def testNetworkCapacity():
     plt.legend(loc="upper right")
     plt.title("Network Capacity Test")
     plt.xlabel("Time (second)")
-    plt.ylabel("TCP Throughput (Mb/s)")
+    plt.ylabel("Aggregated Throughput (Mb/s)")
     plt.savefig(FIGURE)
+    plt.clf()
 
 
 def main():
