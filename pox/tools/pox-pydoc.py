@@ -44,7 +44,8 @@ Paul Prescod, for all his work on onlinehelp.
 Richard Chamberlain, for the first implementation of textdoc.
 """
 
-import sys
+import os # use os
+import sys # use sys
 sys.path.append('..')
 
 # Known bugs that can't be fixed here:
