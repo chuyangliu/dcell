@@ -149,7 +149,8 @@ There are two main differences between the two graphs in the figure. The first i
 
 ## License <!-- omit in toc -->
 
-See the [LICENSE](./LICENSE.md) file for license rights and limitations.
+See the [COPYING](./COPYING) file for license rights and limitations.
+
 
 [badge-python]: https://img.shields.io/badge/python-2.7-blue.svg
 [badge-mininet]: https://img.shields.io/badge/Mininet-2.3.0d5-blue.svg
